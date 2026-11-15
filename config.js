@@ -16,6 +16,7 @@ module.exports = {
   authMethod: "code",
 
   // Features Settings
+  autoReply: false,       // Auto-reply to normal messages (DISABLED)
   autoStatusRead: true,   // Automatically views WhatsApp statuses
   autoStatusReact: true,  // Automatically reacts to WhatsApp statuses
   statusReactEmoji: "random", // Mind-blowing unexpected emojis (🗿, 💀, 🤯, 🥷, 🫠, 👽, ⚡, 🦇, etc.)

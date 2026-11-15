@@ -319,7 +319,7 @@ async function processSingleMessage(sock, m, messageStore) {
     (jid) => jid.split("@")[0] === botNumber
   );
 
-  if (isBotMentioned && !isCmd) {
+  if (config.autoReply && isBotMentioned && !isCmd) {
     if (!isOwner && isAutoReplyThrottled(senderNumber, isGroup)) return;
 
     await simulateTyping(sock, from);
@@ -355,18 +355,20 @@ async function processSingleMessage(sock, m, messageStore) {
       return;
     }
 
-    if (isFromMe) return;
-    if (isAutoReplyThrottled(senderNumber, isGroup)) return;
+    // Auto-reply (only if enabled in config)
+    if (config.autoReply && !isFromMe) {
+      if (isAutoReplyThrottled(senderNumber, isGroup)) return;
 
-    const autoResponse = checkAutoReply(body, pushName);
-    if (autoResponse) {
-      await simulateTyping(sock, from);
-      await humanDelay();
-      await waitForMessageQueue();
-      recordGlobalMessage();
-      recordChatMessage(from);
-      recordAutoReply(senderNumber);
-      await safeSend(sock, from, { text: autoResponse }, { quoted: m });
+      const autoResponse = checkAutoReply(body, pushName);
+      if (autoResponse) {
+        await simulateTyping(sock, from);
+        await humanDelay();
+        await waitForMessageQueue();
+        recordGlobalMessage();
+        recordChatMessage(from);
+        recordAutoReply(senderNumber);
+        await safeSend(sock, from, { text: autoResponse }, { quoted: m });
+      }
     }
     return;
   }
