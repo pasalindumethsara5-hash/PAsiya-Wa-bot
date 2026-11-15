@@ -8,12 +8,10 @@ const {
   humanDelay,
   simulateTyping,
   waitForMessageQueue,
-  safeSendText,
   isGlobalRateLimited,
   recordGlobalMessage,
   isUserOnCooldown,
   recordUserCommand,
-  getUserCooldownRemaining,
   isAutoReplyThrottled,
   recordAutoReply,
   isSpammer,
@@ -57,262 +55,331 @@ function loadCommands() {
 loadCommands();
 
 /**
- * Handle incoming WhatsApp messages
- * 🛡️ Ultimate Anti-Ban Protection Integrated
+ * Diagnostic debug logger to console and bot_debug.log
  */
-async function handleMessages(sock, chatUpdate) {
+function debugLog(text) {
+  const time = new Date().toLocaleTimeString();
+  const line = `[${time}] ${text}`;
+  console.log(line);
   try {
-    const m = chatUpdate.messages[0];
-    if (!m || !m.message) return;
+    fs.appendFileSync(path.join(__dirname, "bot_debug.log"), line + "\n");
+  } catch (e) {}
+}
 
-    // Auto-read WhatsApp status stories (with random delay)
-    if (m.key && m.key.remoteJid === "status@broadcast") {
-      if (config.autoStatusRead) {
-        // 🛡️ Random delay for status reads
-        const delay = getStatusReadDelay();
-        setTimeout(() => {
-          sock.readMessages([m.key]).catch(() => {});
-        }, delay);
+/**
+ * Robust extraction of message body from any WhatsApp message container
+ */
+function getMessageBody(m) {
+  if (!m || !m.message) return "";
+
+  let msg = m.message;
+
+  // Unwrap containers
+  if (msg.ephemeralMessage) msg = msg.ephemeralMessage.message;
+  if (msg.viewOnceMessage) msg = msg.viewOnceMessage.message;
+  if (msg.viewOnceMessageV2) msg = msg.viewOnceMessageV2.message;
+  if (msg.documentWithCaptionMessage) msg = msg.documentWithCaptionMessage.message;
+  if (msg.editedMessage) {
+    msg = msg.editedMessage.message?.protocolMessage?.editedMessage || msg.editedMessage.message;
+  }
+
+  if (!msg) return "";
+
+  // Direct conversation
+  if (typeof msg.conversation === "string" && msg.conversation) {
+    return msg.conversation;
+  }
+
+  // Extended text
+  if (typeof msg.extendedTextMessage?.text === "string" && msg.extendedTextMessage.text) {
+    return msg.extendedTextMessage.text;
+  }
+
+  // Captions
+  if (typeof msg.imageMessage?.caption === "string") return msg.imageMessage.caption;
+  if (typeof msg.videoMessage?.caption === "string") return msg.videoMessage.caption;
+  if (typeof msg.documentMessage?.caption === "string") return msg.documentMessage.caption;
+
+  // Buttons / Interactive responses
+  if (msg.buttonsResponseMessage?.selectedButtonId) return msg.buttonsResponseMessage.selectedButtonId;
+  if (msg.listResponseMessage?.singleSelectReply?.selectedRowId) return msg.listResponseMessage.singleSelectReply.selectedRowId;
+  if (msg.templateButtonReplyMessage?.selectedId) return msg.templateButtonReplyMessage.selectedId;
+
+  // Fallback scan across keys (ignoring metadata)
+  for (const key of Object.keys(msg)) {
+    if (key === "messageContextInfo") continue;
+    if (msg[key] && typeof msg[key].text === "string") return msg[key].text;
+    if (msg[key] && typeof msg[key].caption === "string") return msg[key].caption;
+  }
+
+  return "";
+}
+
+/**
+ * Safe sendMessage: retries without quoted if quoted message fails (crucial for self-chat / LID)
+ */
+async function safeSend(sock, jid, content, options = {}) {
+  try {
+    return await sock.sendMessage(jid, content, options);
+  } catch (err) {
+    if (options && options.quoted) {
+      try {
+        const { quoted, ...fallbackOptions } = options;
+        return await sock.sendMessage(jid, content, fallbackOptions);
+      } catch (err2) {
+        debugLog(`[SEND ERROR] ${err2.message}`);
       }
+    } else {
+      debugLog(`[SEND ERROR] ${err.message}`);
+    }
+  }
+}
+
+/**
+ * Handle a single incoming or outgoing WhatsApp message
+ */
+async function processSingleMessage(sock, m) {
+  if (!m || !m.message) return;
+
+  const from = m.key.remoteJid;
+  if (!from) return;
+
+  // Auto-read WhatsApp status stories (with random delay)
+  if (from === "status@broadcast") {
+    if (config.autoStatusRead) {
+      const delay = getStatusReadDelay();
+      setTimeout(() => {
+        sock.readMessages([m.key]).catch(() => {});
+      }, delay);
+    }
+    return;
+  }
+
+  let msgContent = m.message;
+  if (msgContent.ephemeralMessage) msgContent = msgContent.ephemeralMessage.message;
+  if (msgContent.viewOnceMessage) msgContent = msgContent.viewOnceMessage.message;
+  if (msgContent.viewOnceMessageV2) msgContent = msgContent.viewOnceMessageV2.message;
+  if (msgContent.documentWithCaptionMessage) msgContent = msgContent.documentWithCaptionMessage.message;
+
+  const messageType = Object.keys(msgContent)[0];
+  if (
+    messageType === "protocolMessage" ||
+    messageType === "senderKeyDistributionMessage" ||
+    messageType === "reactionMessage" ||
+    messageType === "pollUpdateMessage" ||
+    messageType === "peerDataOperationRequestMessage"
+  ) {
+    return;
+  }
+
+  const body = getMessageBody(m).trim();
+  if (!body) return;
+
+  const isGroup = from.endsWith("@g.us");
+  const isFromMe = Boolean(m.key.fromMe);
+
+  const botNumber = sock.user?.id?.split(":")[0]?.replace(/[^0-9]/g, "") || "";
+  const botLid = sock.user?.lid?.split(":")[0]?.replace(/[^0-9]/g, "") || "";
+
+  // Determine sender
+  let sender = isGroup ? m.key.participant : m.key.remoteJid;
+  if (isFromMe && botNumber) {
+    sender = `${botNumber}@s.whatsapp.net`;
+  }
+  const senderNumber = sender ? sender.split("@")[0].replace(/[^0-9]/g, "") : "";
+  const pushName = m.pushName || senderNumber || "Friend";
+
+  // Check if sender is owner (isFromMe or bot number or bot LID or configured owner)
+  const isOwner =
+    isFromMe ||
+    (botNumber && senderNumber === botNumber) ||
+    (botLid && senderNumber === botLid) ||
+    (botNumber && from.startsWith(botNumber)) ||
+    (botLid && from.startsWith(botLid)) ||
+    config.ownerNumber.some(
+      (num) => num.replace(/[^0-9]/g, "") === senderNumber
+    );
+
+  // Build message properties
+  m.chat = from;
+  m.sender = sender;
+  m.isGroup = isGroup;
+  m.isOwner = isOwner;
+  m.body = body;
+  m.pushName = pushName;
+
+  debugLog(`📨 [MSG IN] From: ${from} | Body: "${body.slice(0, 30)}" | isFromMe: ${isFromMe} | isOwner: ${isOwner}`);
+
+  // Private mode
+  if (config.workMode === "private" && !isOwner) return;
+
+  // ─── 🛡️ ANTI-BAN GATE (owner & fromMe bypass) ───────────────
+  if (!isOwner && !isFromMe) {
+    if (isSpammer(senderNumber)) return;
+    if (isGlobalRateLimited()) return;
+    if (isChatFlooded(from)) return;
+  }
+
+  const prefix = config.prefix;
+  const isCmd = body.startsWith(prefix);
+
+  // ─── MENTION / TAG DETECTION ─────────────────────────────────
+  const contextInfo =
+    msgContent[messageType]?.contextInfo ||
+    msgContent.extendedTextMessage?.contextInfo;
+  const mentionedJids = contextInfo?.mentionedJid || [];
+  const isBotMentioned = mentionedJids.some(
+    (jid) => jid.split("@")[0] === botNumber
+  );
+
+  if (isBotMentioned && !isCmd) {
+    if (!isOwner && isAutoReplyThrottled(senderNumber, isGroup)) return;
+
+    await simulateTyping(sock, from);
+    await humanDelay();
+    await waitForMessageQueue();
+    recordGlobalMessage();
+    recordChatMessage(from);
+    recordAutoReply(senderNumber);
+
+    const tagReply = `👋 *Hey ${pushName}!*\n\n🤖 Mama *PASIYA-MD* Bot!\n\nMata msg karannada? Oya meka type karanna:\n\n📋 *Commands:* *.menu*\n🤖 *AI Chat:* *.ai <question>*\n🎵 *Music:* *.song <name>*\n😂 *Joke:* *.joke*\n\n> 👑 ${config.footer}`;
+    await safeSend(sock, from, { text: tagReply }, { quoted: m });
+    return;
+  }
+
+  // ─── NON-COMMAND MESSAGES ────────────────────────────────────
+  if (!isCmd) {
+    if (isGroup && !isOwner) {
+      const linkCaught = await handleAntiLink(
+        sock,
+        { chat: from, sender, key: m.key, isGroup },
+        body
+      ).catch(() => false);
+      if (linkCaught) return;
+    }
+
+    // Check if message is a reply to pending download (mp3 / mp4 / mb4 / 1 / 2)
+    const handled = await downloadModule
+      .handleDownloadReply(sock, m, body)
+      .catch(() => false);
+    if (handled) {
+      recordGlobalMessage();
+      recordChatMessage(from);
       return;
     }
 
-    // Unwrap nested message containers (ephemeral, viewOnce, etc.)
-    let msgContent = m.message;
-    if (msgContent.ephemeralMessage) {
-      msgContent = msgContent.ephemeralMessage.message;
-      m.message = msgContent;
-    }
-    if (msgContent.viewOnceMessage) {
-      msgContent = msgContent.viewOnceMessage.message;
-      m.message = msgContent;
-    }
-    if (msgContent.viewOnceMessageV2) {
-      msgContent = msgContent.viewOnceMessageV2.message;
-      m.message = msgContent;
-    }
-    if (msgContent.documentWithCaptionMessage) {
-      msgContent = msgContent.documentWithCaptionMessage.message;
-      m.message = msgContent;
-    }
+    if (isFromMe) return;
+    if (isAutoReplyThrottled(senderNumber, isGroup)) return;
 
-    // Ignore protocol/system messages
-    const messageType = Object.keys(msgContent)[0];
-    if (
-      messageType === "protocolMessage" ||
-      messageType === "senderKeyDistributionMessage" ||
-      messageType === "reactionMessage" ||
-      messageType === "pollUpdateMessage" ||
-      messageType === "peerDataOperationRequestMessage"
-    ) return;
-
-    // Extract text content from all message types
-    let body =
-      msgContent.conversation ||
-      msgContent.extendedTextMessage?.text ||
-      msgContent[messageType]?.text ||
-      msgContent[messageType]?.caption ||
-      msgContent[messageType]?.description ||
-      "";
-
-    if (!body) return;
-
-    const from = m.key.remoteJid;
-    const isGroup = from.endsWith("@g.us");
-    const isFromMe = Boolean(m.key.fromMe);
-    const botNumber = sock.user?.id?.split(":")[0]?.replace(/[^0-9]/g, "") || "";
-
-    // Determine sender
-    let sender = isGroup ? m.key.participant : m.key.remoteJid;
-    if (isFromMe && botNumber) {
-      sender = `${botNumber}@s.whatsapp.net`;
-    }
-    const senderNumber = sender ? sender.split("@")[0].replace(/[^0-9]/g, "") : "";
-    const pushName = m.pushName || senderNumber || "Friend";
-
-    // Check if sender is owner (isFromMe or bot's own number or configured ownerNumber)
-    const isOwner =
-      isFromMe ||
-      (botNumber && senderNumber === botNumber) ||
-      config.ownerNumber.some(
-        (num) => num.replace(/[^0-9]/g, "") === senderNumber
-      );
-
-    // Build enhanced message object early
-    m.chat = from;
-    m.sender = sender;
-    m.isGroup = isGroup;
-    m.isOwner = isOwner;
-    m.body = body;
-    m.pushName = pushName;
-
-    // Private mode
-    if (config.workMode === "private" && !isOwner) return;
-
-    // ─── 🛡️ ANTI-BAN GATE ─────────────────────────────────────
-    // All protections checked here before any response is sent
-    if (!isOwner && !isFromMe) {
-      // 1. Spam detection — is this person flooding the bot?
-      if (isSpammer(senderNumber)) {
-        return; // Silent ignore
-      }
-
-      // 2. Global rate limit
-      if (isGlobalRateLimited()) {
-        console.log(`[ANTI-BAN] 🛑 Global rate limit! Ignoring ${senderNumber}`);
-        return;
-      }
-
-      // 3. Per-chat flood check
-      if (isChatFlooded(from)) {
-        console.log(`[ANTI-BAN] 🛑 Chat flooded: ${from.split("@")[0]}`);
-        return;
-      }
-    }
-
-    const prefix = config.prefix;
-    const isCmd = body.startsWith(prefix);
-
-    // ─── MENTION / TAG DETECTION ───────────────────────────────
-    const contextInfo = msgContent[messageType]?.contextInfo || msgContent.extendedTextMessage?.contextInfo;
-    const mentionedJids = contextInfo?.mentionedJid || [];
-    const isBotMentioned = mentionedJids.some(
-      (jid) => jid.split("@")[0] === botNumber
-    );
-
-    if (isBotMentioned && !isCmd) {
-      if (!isOwner && isAutoReplyThrottled(senderNumber, isGroup)) return;
-
-      // 🛡️ Typing + delay + send
+    const autoResponse = checkAutoReply(body, pushName);
+    if (autoResponse) {
       await simulateTyping(sock, from);
       await humanDelay();
       await waitForMessageQueue();
       recordGlobalMessage();
       recordChatMessage(from);
       recordAutoReply(senderNumber);
-
-      const tagReply = `👋 *Hey ${pushName}!*\n\n🤖 Mama *PASIYA-MD* Bot!\n\nMata msg karannada? Oya meka type karanna:\n\n📋 *Commands:* *.menu*\n🤖 *AI Chat:* *.ai <question>*\n🎵 *Music:* *.song <name>*\n😂 *Joke:* *.joke*\n\n> 👑 ${config.footer}`;
-      await sock.sendMessage(from, { text: tagReply }, { quoted: m });
-      return;
+      await safeSend(sock, from, { text: autoResponse }, { quoted: m });
     }
+    return;
+  }
 
-    // ─── NON-COMMAND MESSAGES ──────────────────────────────────
-    if (!isCmd) {
-      // 🛡️ Group Anti-link check for non-command messages
-      if (isGroup && !isOwner) {
-        const linkCaught = await handleAntiLink(sock, { chat: from, sender, key: m.key, isGroup }, body).catch(() => false);
-        if (linkCaught) return;
-      }
+  // ─── COMMAND HANDLER ─────────────────────────────────────────
+  const cleanBody = body.slice(prefix.length).trim();
+  const args = cleanBody.split(/ +/);
+  const rawCommandName = args.shift().toLowerCase();
+  if (!rawCommandName) return;
 
-      const handled = await downloadModule.handleDownloadReply(sock, m, body).catch(() => false);
-      if (handled) {
-        recordGlobalMessage();
-        recordChatMessage(from);
-        return;
-      }
+  // Clean brackets if user typed e.g. .song<name>
+  const commandName = rawCommandName.replace(/[<>]/g, "");
 
-      // Skip auto-reply for own messages
-      if (isFromMe) return;
+  const actualCmdName = commands.has(commandName)
+    ? commandName
+    : aliases.get(commandName);
 
-      // 🛡️ Auto-reply with full throttling
-      if (isAutoReplyThrottled(senderNumber, isGroup)) return;
+  if (!actualCmdName) {
+    debugLog(`❓ Unknown command: ${commandName}`);
+    return;
+  }
 
-      const autoResponse = checkAutoReply(body, pushName);
-      if (autoResponse) {
-        // 🛡️ Full protection: typing + delay + queue
-        await simulateTyping(sock, from);
-        await humanDelay();
-        await waitForMessageQueue();
-        recordGlobalMessage();
-        recordChatMessage(from);
-        recordAutoReply(senderNumber);
-        console.log(`[AUTO-REPLY] 💬 ${pushName} (${senderNumber}) | Next in 5min`);
-        await sock.sendMessage(from, { text: autoResponse }, { quoted: m });
-      }
-      return;
-    }
+  const command = commands.get(actualCmdName);
+  if (!command) return;
 
-    // ─── COMMAND HANDLER ───────────────────────────────────────
-    const args = body.slice(prefix.length).trim().split(/ +/);
-    const commandName = args.shift().toLowerCase();
-    if (!commandName) return;
+  if (!isOwner && isUserOnCooldown(senderNumber, isGroup)) {
+    debugLog(`⏳ [COOLDOWN] ${senderNumber}`);
+    return;
+  }
 
-    const actualCmdName = commands.has(commandName)
-      ? commandName
-      : aliases.get(commandName);
-    if (!actualCmdName) return;
+  if (contextInfo) {
+    m.quoted = {
+      sender: contextInfo.participant,
+      message: contextInfo.quotedMessage,
+      text:
+        contextInfo.quotedMessage?.conversation ||
+        contextInfo.quotedMessage?.[Object.keys(contextInfo.quotedMessage || {})[0]]?.caption ||
+        contextInfo.quotedMessage?.[Object.keys(contextInfo.quotedMessage || {})[0]]?.text ||
+        "",
+    };
+    m.mentionedJid = mentionedJids;
+  } else {
+    m.quoted = null;
+    m.mentionedJid = [];
+  }
 
-    const command = commands.get(actualCmdName);
-    if (!command) return;
+  if (!isOwner) {
+    await simulateTyping(sock, from);
+    await humanDelay();
+  }
 
-    // 🛡️ Per-user command cooldown (owner bypasses)
-    if (!isOwner && isUserOnCooldown(senderNumber, isGroup)) {
-      console.log(`[ANTI-BAN] ⏳ Cooldown: ${senderNumber}`);
-      return; // Silent ignore — safer than replying "wait"
-    }
+  // Auto React
+  if (config.autoReact) {
+    setTimeout(() => {
+      sock.sendMessage(from, { react: { text: "⚡", key: m.key } }).catch(() => {});
+    }, 200 + Math.random() * 500);
+  }
 
-    // Build enhanced message object
-    m.chat = from;
-    m.sender = sender;
-    m.isGroup = isGroup;
-    m.isOwner = isOwner;
-    m.body = body;
-    m.pushName = pushName;
+  recordUserCommand(senderNumber);
+  recordGlobalMessage();
+  recordChatMessage(from);
+  await waitForMessageQueue();
 
-    if (contextInfo) {
-      m.quoted = {
-        sender: contextInfo.participant,
-        message: contextInfo.quotedMessage,
-        text:
-          contextInfo.quotedMessage?.conversation ||
-          contextInfo.quotedMessage?.[Object.keys(contextInfo.quotedMessage || {})[0]]?.caption ||
-          contextInfo.quotedMessage?.[Object.keys(contextInfo.quotedMessage || {})[0]]?.text ||
-          "",
-      };
-      m.mentionedJid = mentionedJids;
-    } else {
-      m.quoted = null;
-      m.mentionedJid = [];
-    }
+  debugLog(`⚡ [CMD EXEC] ${prefix}${actualCmdName} | ${pushName} (${senderNumber}) | ${isGroup ? "Group" : "PM"}`);
 
-    // 🛡️ Typing simulation + human delay (owner gets faster)
-    if (!isOwner) {
-      await simulateTyping(sock, from);
-      await humanDelay();
-    }
+  // Wrap sock with safeSend so any command calling sock.sendMessage is protected
+  const safeSock = {
+    ...sock,
+    sendMessage: (jid, content, opt) => safeSend(sock, jid, content, opt),
+  };
 
-    // Auto React (with slight delay)
-    if (config.autoReact) {
-      setTimeout(() => {
-        sock.sendMessage(from, { react: { text: "⚡", key: m.key } }).catch(() => {});
-      }, 300 + Math.random() * 700);
-    }
+  const timeout = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error("Command timeout (30s)")), 30000)
+  );
 
-    // 🛡️ Record everything
-    recordUserCommand(senderNumber);
-    recordGlobalMessage();
-    recordChatMessage(from);
-    await waitForMessageQueue();
-
-    console.log(`[CMD] ${prefix}${actualCmdName} | ${pushName} (${senderNumber}) | ${isGroup ? "Group" : "PM"}${isNightTime() ? " | 🌙 Night" : ""}`);
-
-    // Execute with timeout (30s)
-    const timeout = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Command timeout")), 30000)
+  try {
+    await Promise.race([command.execute(safeSock, m, args), timeout]);
+    debugLog(`✅ [CMD DONE] ${prefix}${actualCmdName}`);
+  } catch (err) {
+    debugLog(`❌ [CMD ERROR] ${actualCmdName}: ${err.message}`);
+    await safeSend(
+      sock,
+      from,
+      { text: `❌ *Error!*\n\n\`${err.message}\`` },
+      { quoted: m }
     );
+  }
+}
 
-    await Promise.race([
-      command.execute(sock, m, args),
-      timeout
-    ]).catch(async (err) => {
-      console.error(`[CMD ERROR] ${actualCmdName}:`, err.message);
-      await sock.sendMessage(
-        from,
-        { text: `❌ *Error!*\n\n\`${err.message}\`` },
-        { quoted: m }
-      ).catch(() => {});
-    });
+/**
+ * Main Baileys message event handler
+ */
+async function handleMessages(sock, chatUpdate) {
+  try {
+    const messages = chatUpdate.messages;
+    if (!messages || !Array.isArray(messages)) return;
 
+    for (const m of messages) {
+      await processSingleMessage(sock, m);
+    }
   } catch (err) {
     if (!err.message?.includes("Bad MAC")) {
       console.error("[HANDLER ERROR]", err.message);
@@ -320,4 +387,4 @@ async function handleMessages(sock, chatUpdate) {
   }
 }
 
-module.exports = { handleMessages, commands };
+module.exports = { handleMessages, commands, safeSend };

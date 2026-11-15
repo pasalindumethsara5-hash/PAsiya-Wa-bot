@@ -86,7 +86,7 @@ module.exports = {
     category: "download",
     desc: "Search and download a song (MP3 or MP4)",
     async execute(sock, m, args) {
-      const query = args.join(" ");
+      let query = args.join(" ").trim().replace(/^<+/, "").replace(/>+$/, "").trim();
       if (!query) {
         return sock.sendMessage(
           m.chat,
@@ -158,7 +158,7 @@ module.exports = {
     category: "download",
     desc: "Search and download a YouTube video",
     async execute(sock, m, args) {
-      const query = args.join(" ");
+      let query = args.join(" ").trim().replace(/^<+/, "").replace(/>+$/, "").trim();
       if (!query) {
         return sock.sendMessage(
           m.chat,
@@ -221,7 +221,7 @@ module.exports = {
     category: "download",
     desc: "Search YouTube videos",
     async execute(sock, m, args) {
-      const query = args.join(" ");
+      let query = args.join(" ").trim().replace(/^<+/, "").replace(/>+$/, "").trim();
       if (!query) {
         return sock.sendMessage(
           m.chat,
