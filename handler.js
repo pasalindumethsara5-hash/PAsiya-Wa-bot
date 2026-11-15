@@ -119,17 +119,24 @@ async function handleMessages(sock, chatUpdate) {
 
     const from = m.key.remoteJid;
     const isGroup = from.endsWith("@g.us");
-    const sender = isGroup ? m.key.participant : m.key.remoteJid;
+    const isFromMe = Boolean(m.key.fromMe);
+    const botNumber = sock.user?.id?.split(":")[0]?.replace(/[^0-9]/g, "") || "";
+
+    // Determine sender
+    let sender = isGroup ? m.key.participant : m.key.remoteJid;
+    if (isFromMe && botNumber) {
+      sender = `${botNumber}@s.whatsapp.net`;
+    }
     const senderNumber = sender ? sender.split("@")[0].replace(/[^0-9]/g, "") : "";
     const pushName = m.pushName || senderNumber || "Friend";
 
-    const botNumber = sock.user?.id?.split(":")[0]?.split("@")[0] || "";
-    const isFromMe = m.key.fromMe;
-
-    // Check if sender is owner
-    const isOwner = config.ownerNumber.some(
-      (num) => num.replace(/[^0-9]/g, "") === senderNumber
-    );
+    // Check if sender is owner (isFromMe or bot's own number or configured ownerNumber)
+    const isOwner =
+      isFromMe ||
+      (botNumber && senderNumber === botNumber) ||
+      config.ownerNumber.some(
+        (num) => num.replace(/[^0-9]/g, "") === senderNumber
+      );
 
     // Build enhanced message object early
     m.chat = from;

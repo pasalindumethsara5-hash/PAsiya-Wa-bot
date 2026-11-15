@@ -2,6 +2,16 @@ const axios = require("axios");
 const config = require("../config");
 const { Ytdl } = require("@distube/ytdl-core");
 const { Downloader } = require("@tobyg74/tiktok-api-dl");
+const yts = require("yt-search");
+const ffmpeg = require("fluent-ffmpeg");
+const ffmpegInstaller = require("@ffmpeg-installer/ffmpeg");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+
+try {
+  ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+} catch (e) {}
 
 const yt = new Ytdl();
 
@@ -36,39 +46,24 @@ function streamToBuffer(stream, maxBytes = 45 * 1024 * 1024) {
 }
 
 /**
- * Search YouTube for a song or video using Invidious / scraper
+ * Search YouTube for a song or video using yt-search (fast & resilient)
  */
 async function searchYouTube(query) {
   try {
-    const searchRes = await yt.search(query, { limit: 1 });
-    if (searchRes && searchRes.length > 0) {
-      const item = searchRes[0];
+    const res = await yts(query);
+    if (res && res.videos && res.videos.length > 0) {
+      const v = res.videos[0];
       return {
-        videoId: item.id,
-        title: item.name || item.title,
-        author: item.uploader?.name || item.author?.name || "YouTube Creator",
-        lengthSeconds: item.duration || 0,
-        thumbnail: item.thumbnail?.url || `https://img.youtube.com/vi/${item.id}/hqdefault.jpg`,
+        videoId: v.videoId,
+        title: v.title,
+        author: v.author?.name || "YouTube Creator",
+        lengthSeconds: v.seconds || 0,
+        duration: v.timestamp || "N/A",
+        thumbnail: v.thumbnail || v.image || `https://img.youtube.com/vi/${v.videoId}/hqdefault.jpg`,
       };
     }
   } catch (err) {
-    // Fallback: invidious search
-    try {
-      const res = await axios.get(
-        `https://invidious.nerdvpn.de/api/v1/search?q=${encodeURIComponent(query)}&type=video`,
-        { timeout: 8000 }
-      );
-      if (res.data && res.data.length > 0) {
-        const item = res.data[0];
-        return {
-          videoId: item.videoId,
-          title: item.title,
-          author: item.author,
-          lengthSeconds: item.lengthSeconds,
-          thumbnail: item.videoThumbnails?.[0]?.url || `https://img.youtube.com/vi/${item.videoId}/hqdefault.jpg`,
-        };
-      }
-    } catch (e2) {}
+    console.error("yt-search error:", err.message);
   }
   return null;
 }
@@ -378,6 +373,7 @@ module.exports = {
       if (format === "mp3") {
         // High quality audio stream
         const audioStream = yt.download(pending.videoUrl, {
+          quality: "highestaudio",
           filter: { hasAudio: true, hasVideo: false }
         });
 
@@ -394,13 +390,47 @@ module.exports = {
           { quoted: m }
         );
       } else {
-        // Video stream with audio (muxed 360p/480p)
-        const videoStream = yt.download(pending.videoUrl, {
-          filter: (f) => f.hasAudio && f.hasVideo,
-          quality: "lowestvideo"
+        // Video MP4 with full audio merged via FFmpeg
+        const tempId = Date.now() + "_" + Math.floor(Math.random() * 1000);
+        const tempDir = os.tmpdir();
+        const tempVideo = path.join(tempDir, `v_${tempId}.mp4`);
+        const tempAudio = path.join(tempDir, `a_${tempId}.mp4`);
+        const tempOut = path.join(tempDir, `merged_${tempId}.mp4`);
+
+        const vStream = yt.download(pending.videoUrl, {
+          quality: "lowestvideo",
+          filter: { hasVideo: true, hasAudio: false }
+        });
+        const aStream = yt.download(pending.videoUrl, {
+          quality: "highestaudio",
+          filter: { hasVideo: false, hasAudio: true }
         });
 
-        const videoBuffer = await streamToBuffer(videoStream, 45 * 1024 * 1024);
+        const vPipe = vStream.pipe(fs.createWriteStream(tempVideo));
+        const aPipe = aStream.pipe(fs.createWriteStream(tempAudio));
+
+        await Promise.all([
+          new Promise((res, rej) => { vPipe.on("finish", res); vStream.on("error", rej); }),
+          new Promise((res, rej) => { aPipe.on("finish", res); aStream.on("error", rej); })
+        ]);
+
+        await new Promise((res, rej) => {
+          ffmpeg()
+            .input(tempVideo)
+            .input(tempAudio)
+            .videoCodec("copy")
+            .audioCodec("aac")
+            .save(tempOut)
+            .on("end", res)
+            .on("error", rej);
+        });
+
+        const videoBuffer = fs.readFileSync(tempOut);
+
+        // Immediate cleanup of temporary files
+        try { fs.unlinkSync(tempVideo); } catch (x) {}
+        try { fs.unlinkSync(tempAudio); } catch (x) {}
+        try { fs.unlinkSync(tempOut); } catch (x) {}
 
         await sock.sendMessage(
           chat,

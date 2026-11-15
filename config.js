@@ -7,7 +7,7 @@ module.exports = {
   // Bot & Owner Details
   botName: "PASIYA-MD",
   ownerName: "PASIYA",
-  ownerNumber: ["94700000000"], // Add your WhatsApp number with country code (e.g., 94712345678)
+  ownerNumber: ["94728433928", "94700000000"], // Owner WhatsApp number
   prefix: ".", // Command prefix (e.g., .menu , !menu)
   
   // Linking Method:
