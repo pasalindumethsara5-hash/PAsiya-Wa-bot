@@ -21,6 +21,11 @@ const {
   isNightTime,
 } = require("./lib/antiban");
 
+// 🛡️ Bot startup timestamp to prevent re-executing old historical messages
+const botStartTime = Math.floor(Date.now() / 1000);
+// 🛡️ Cache processed message IDs to eliminate duplicate executions
+const processedMessageIds = new Set();
+
 // Load all command modules
 const commands = new Map();
 const aliases = new Map();
@@ -143,6 +148,27 @@ async function processSingleMessage(sock, m, messageStore) {
 
   const from = m.key.remoteJid;
   if (!from) return;
+
+  // 🛡️ DEDUPLICATION: Never process the exact same message ID twice
+  if (m.key.id) {
+    if (processedMessageIds.has(m.key.id)) {
+      return;
+    }
+    processedMessageIds.add(m.key.id);
+    if (processedMessageIds.size > 3000) {
+      const oldKeys = Array.from(processedMessageIds).slice(0, 1000);
+      oldKeys.forEach((k) => processedMessageIds.delete(k));
+    }
+  }
+
+  // 🛡️ ANTI-REPLAY FILTER: Skip old/historical messages synced from WhatsApp servers
+  const msgTime = typeof m.messageTimestamp === "number"
+    ? m.messageTimestamp
+    : m.messageTimestamp?.low || Math.floor(Date.now() / 1000);
+
+  if (msgTime < botStartTime - 5) {
+    return;
+  }
 
   // Auto-read & Auto-react to WhatsApp status stories (with random human delay)
   if (from === "status@broadcast") {

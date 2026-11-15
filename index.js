@@ -293,6 +293,11 @@ async function startPasiyaBot() {
       console.error("[UNCAUGHT ERROR]", err.message);
     }
   });
+
+  process.removeAllListeners("unhandledRejection");
+  process.on("unhandledRejection", (err) => {
+    console.error("[UNHANDLED REJECTION]", err?.message || err);
+  });
 }
 
 startPasiyaBot().catch((err) => {
