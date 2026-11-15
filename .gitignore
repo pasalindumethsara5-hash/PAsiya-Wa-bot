@@ -1,0 +1,11 @@
+# 🛡️ PASIYA-MD Session & Sensitive Files
+session/
+*.log
+.env
+
+# Node modules
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
