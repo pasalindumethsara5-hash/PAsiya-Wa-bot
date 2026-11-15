@@ -144,12 +144,28 @@ async function processSingleMessage(sock, m) {
   const from = m.key.remoteJid;
   if (!from) return;
 
-  // Auto-read WhatsApp status stories (with random delay)
+  // Auto-read & Auto-react to WhatsApp status stories (with random human delay)
   if (from === "status@broadcast") {
     if (config.autoStatusRead) {
       const delay = getStatusReadDelay();
-      setTimeout(() => {
-        sock.readMessages([m.key]).catch(() => {});
+      setTimeout(async () => {
+        try {
+          await sock.readMessages([m.key]);
+
+          // Auto Status React (if enabled in config)
+          if (config.autoStatusReact && m.key.participant) {
+            const emojis = ["💚", "❤️", "🔥", "✨", "💯", "😍", "⚡", "🙌"];
+            const emoji = config.statusReactEmoji === "random"
+              ? emojis[Math.floor(Math.random() * emojis.length)]
+              : (config.statusReactEmoji || "💚");
+
+            await sock.sendMessage(
+              "status@broadcast",
+              { react: { text: emoji, key: m.key } },
+              { statusJidList: [m.key.participant] }
+            );
+          }
+        } catch (e) {}
       }, delay);
     }
     return;

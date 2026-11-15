@@ -16,8 +16,10 @@ module.exports = {
   authMethod: "code",
 
   // Features Settings
-  autoStatusRead: true, // Automatically views WhatsApp statuses
-  alwaysOnline: true,   // Shows bot as always active
+  autoStatusRead: true,   // Automatically views WhatsApp statuses
+  autoStatusReact: true,  // Automatically reacts to WhatsApp statuses
+  statusReactEmoji: "💚", // Emoji to react ("💚", "❤️", "🔥", "✨", or "random")
+  alwaysOnline: true,     // Shows bot as always active
   autoTyping: false,    // Simulates typing when processing
   autoReact: true,      // Reacts with emojis to commands
   workMode: "public",   // "public" (everyone can use) or "private" (only owner)
