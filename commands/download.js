@@ -1,65 +1,76 @@
 const axios = require("axios");
 const config = require("../config");
+const { Ytdl } = require("@distube/ytdl-core");
+const { Downloader } = require("@tobyg74/tiktok-api-dl");
+
+const yt = new Ytdl();
 
 // Store pending download states: key = userJID, value = { videoId, title, thumbnail }
 const pendingDownloads = new Map();
 
 /**
- * Search YouTube for a song using free API
+ * Convert a readable stream into a single Buffer (with max size safeguard)
  */
-async function searchYouTube(query) {
-  try {
-    // Use YouTube search via invidious public API (no key needed)
-    const res = await axios.get(
-      `https://inv.nadeko.net/api/v1/search?q=${encodeURIComponent(query)}&type=video&fields=videoId,title,author,lengthSeconds,videoThumbnails`,
-      { timeout: 10000 }
-    );
-    if (res.data && res.data.length > 0) {
-      return res.data[0];
-    }
-    return null;
-  } catch (err) {
-    // Fallback invidious instance
-    try {
-      const res2 = await axios.get(
-        `https://invidious.privacydev.net/api/v1/search?q=${encodeURIComponent(query)}&type=video&fields=videoId,title,author,lengthSeconds,videoThumbnails`,
-        { timeout: 10000 }
-      );
-      if (res2.data && res2.data.length > 0) return res2.data[0];
-    } catch (e) {}
-    return null;
-  }
+function streamToBuffer(stream, maxBytes = 45 * 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let totalLength = 0;
+
+    stream.on("data", (chunk) => {
+      totalLength += chunk.length;
+      if (totalLength > maxBytes) {
+        stream.destroy();
+        return reject(new Error("File size exceeds 45MB WhatsApp limit"));
+      }
+      chunks.push(chunk);
+    });
+
+    stream.on("end", () => {
+      resolve(Buffer.concat(chunks));
+    });
+
+    stream.on("error", (err) => {
+      reject(err);
+    });
+  });
 }
 
 /**
- * Download using cobalt.tools free API
+ * Search YouTube for a song or video using Invidious / scraper
  */
-async function downloadMedia(videoUrl, format) {
+async function searchYouTube(query) {
   try {
-    const response = await axios.post(
-      "https://api.cobalt.tools/",
-      {
-        url: videoUrl,
-        downloadMode: format === "mp3" ? "audio" : "auto",
-        audioFormat: "mp3",
-        videoQuality: "720",
-      },
-      {
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        },
-        timeout: 30000,
-      }
-    );
-
-    if (response.data && response.data.url) {
-      return response.data.url;
+    const searchRes = await yt.search(query, { limit: 1 });
+    if (searchRes && searchRes.length > 0) {
+      const item = searchRes[0];
+      return {
+        videoId: item.id,
+        title: item.name || item.title,
+        author: item.uploader?.name || item.author?.name || "YouTube Creator",
+        lengthSeconds: item.duration || 0,
+        thumbnail: item.thumbnail?.url || `https://img.youtube.com/vi/${item.id}/hqdefault.jpg`,
+      };
     }
-    return null;
   } catch (err) {
-    return null;
+    // Fallback: invidious search
+    try {
+      const res = await axios.get(
+        `https://invidious.nerdvpn.de/api/v1/search?q=${encodeURIComponent(query)}&type=video`,
+        { timeout: 8000 }
+      );
+      if (res.data && res.data.length > 0) {
+        const item = res.data[0];
+        return {
+          videoId: item.videoId,
+          title: item.title,
+          author: item.author,
+          lengthSeconds: item.lengthSeconds,
+          thumbnail: item.videoThumbnails?.[0]?.url || `https://img.youtube.com/vi/${item.videoId}/hqdefault.jpg`,
+        };
+      }
+    } catch (e2) {}
   }
+  return null;
 }
 
 /**
@@ -72,7 +83,6 @@ function formatDuration(seconds) {
 }
 
 module.exports = {
-  // Export pendingDownloads so handler.js can access it
   pendingDownloads,
 
   song: {
@@ -97,7 +107,7 @@ module.exports = {
       if (!result) {
         return sock.sendMessage(
           m.chat,
-          { text: `❌ *Song not found!* Try another name.\n\n*Example:* ${config.prefix}song Shape of You Ed Sheeran` },
+          { text: `❌ *Song not found!* Try another name or add the artist name.\n\n*Example:* ${config.prefix}song Shape of You Ed Sheeran` },
           { quoted: m }
         );
       }
@@ -106,10 +116,9 @@ module.exports = {
       const title = result.title || "Unknown Title";
       const author = result.author || "Unknown Artist";
       const duration = result.lengthSeconds ? formatDuration(result.lengthSeconds) : "N/A";
-      const thumbnail = result.videoThumbnails?.[0]?.url || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+      const thumbnail = result.thumbnail || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
       const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
-      // Store the pending state for this user
       const userKey = `${m.sender}_${m.chat}`;
       pendingDownloads.set(userKey, {
         videoId,
@@ -118,37 +127,29 @@ module.exports = {
         author,
         duration,
         thumbnail,
-        expires: Date.now() + 2 * 60 * 1000, // 2 minute expiry
+        expires: Date.now() + 2 * 60 * 1000,
       });
 
-      // Send song info and ask format
-      const infoText = `🎵 *SONG FOUND!* 🎵
-
-🎬 *Title:* ${title}
-👤 *Artist:* ${author}
-⏱️ *Duration:* ${duration}
-🔗 *YouTube:* ${videoUrl}
-
-━━━━━━━━━━━━━━━━━━━━
-📥 *Format ekak choose karanna:*
-
-Reply with👇
-  🎵 *mp3* — Audio only (Small file)
-  🎬 *mp4* — Video with audio (Larger file)
-━━━━━━━━━━━━━━━━━━━━
-⏳ *2 minutes athule reply karanna!*`;
+      const infoText = `🎵 *SONG FOUND!* 🎵\n\n` +
+        `🎬 *Title:* ${title}\n` +
+        `👤 *Artist:* ${author}\n` +
+        `⏱️ *Duration:* ${duration}\n` +
+        `🔗 *YouTube:* ${videoUrl}\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `📥 *Format ekak choose karanna:*\n\n` +
+        `Reply with👇\n` +
+        `  🎵 *mp3* — Audio only (Fast)\n` +
+        `  🎬 *mp4* — Video with audio\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `⏳ *2 minutes athule reply karanna!*`;
 
       try {
         await sock.sendMessage(
           m.chat,
-          {
-            image: { url: thumbnail },
-            caption: infoText,
-          },
+          { image: { url: thumbnail }, caption: infoText },
           { quoted: m }
         );
       } catch (e) {
-        // If image fails, send text only
         await sock.sendMessage(m.chat, { text: infoText }, { quoted: m });
       }
     },
@@ -181,7 +182,7 @@ Reply with👇
       const title = result.title || "Unknown";
       const author = result.author || "Unknown";
       const duration = result.lengthSeconds ? formatDuration(result.lengthSeconds) : "N/A";
-      const thumbnail = result.videoThumbnails?.[0]?.url || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+      const thumbnail = result.thumbnail || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
       const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
       const userKey = `${m.sender}_${m.chat}`;
@@ -195,20 +196,17 @@ Reply with👇
         expires: Date.now() + 2 * 60 * 1000,
       });
 
-      const infoText = `🎬 *VIDEO FOUND!* 🎬
-
-📌 *Title:* ${title}
-👤 *Channel:* ${author}
-⏱️ *Duration:* ${duration}
-🔗 *YouTube:* ${videoUrl}
-
-━━━━━━━━━━━━━━━━━━━━
-📥 *Format ekak choose karanna:*
-
-Reply with👇
-  🎵 *mp3* — Audio only
-  🎬 *mp4* — Full Video
-━━━━━━━━━━━━━━━━━━━━`;
+      const infoText = `🎬 *VIDEO FOUND!* 🎬\n\n` +
+        `📌 *Title:* ${title}\n` +
+        `👤 *Channel:* ${author}\n` +
+        `⏱️ *Duration:* ${duration}\n` +
+        `🔗 *YouTube:* ${videoUrl}\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `📥 *Format ekak choose karanna:*\n\n` +
+        `Reply with👇\n` +
+        `  🎵 *mp3* — Audio only\n` +
+        `  🎬 *mp4* — Full Video\n` +
+        `━━━━━━━━━━━━━━━━━━━━`;
 
       try {
         await sock.sendMessage(m.chat, { image: { url: thumbnail }, caption: infoText }, { quoted: m });
@@ -238,20 +236,15 @@ Reply with👇
       const result = await searchYouTube(query);
 
       if (result) {
-        const videoId = result.videoId;
-        const text = `🎬 *YOUTUBE RESULT* 🎬
-
-📌 *Title:* ${result.title || "N/A"}
-👤 *Channel:* ${result.author || "N/A"}
-⏱️ *Duration:* ${result.lengthSeconds ? formatDuration(result.lengthSeconds) : "N/A"}
-🔗 *Link:* https://www.youtube.com/watch?v=${videoId}
-
-💡 *Download:*
-  ${config.prefix}song ${query} → MP3/MP4 choice`;
+        const text = `🎬 *YOUTUBE RESULT* 🎬\n\n` +
+          `📌 *Title:* ${result.title || "N/A"}\n` +
+          `👤 *Channel:* ${result.author || "N/A"}\n` +
+          `⏱️ *Duration:* ${result.lengthSeconds ? formatDuration(result.lengthSeconds) : "N/A"}\n` +
+          `🔗 *Link:* https://www.youtube.com/watch?v=${result.videoId}\n\n` +
+          `💡 *Download:* \`${config.prefix}song ${query}\``;
 
         try {
-          const thumb = result.videoThumbnails?.[0]?.url || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
-          await sock.sendMessage(m.chat, { image: { url: thumb }, caption: text }, { quoted: m });
+          await sock.sendMessage(m.chat, { image: { url: result.thumbnail }, caption: text }, { quoted: m });
         } catch (e) {
           await sock.sendMessage(m.chat, { text }, { quoted: m });
         }
@@ -281,33 +274,20 @@ Reply with👇
       await sock.sendMessage(m.chat, { text: "⏳ *Downloading TikTok video (No Watermark)...*" }, { quoted: m });
 
       try {
-        const res = await axios.post("https://www.tikwm.com/api/", `url=${encodeURIComponent(url)}`, {
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          timeout: 20000
-        });
+        const result = await Downloader(url, { version: "v1" });
+        if (result.status === "success" && result.result) {
+          const videoUrl = result.result.video?.playAddr?.[0] || result.result.videoUrl;
+          const title = result.result.description || result.result.title || "TikTok Video";
+          const author = result.result.author?.nickname || "TikTok User";
 
-        if (res.data && res.data.data) {
-          const data = res.data.data;
-          const videoUrl = data.play || data.wmplay;
-          const title = data.title || "TikTok Video";
-          const author = data.author?.nickname || "TikTok User";
-
-          await sock.sendMessage(m.chat, {
-            video: { url: videoUrl },
-            caption: `🎵 *${title}*\n👤 *Creator:* ${author}\n\n> ${config.footer}`
-          }, { quoted: m });
-        } else {
-          // Fallback to cobalt
-          const cobaltUrl = await downloadMedia(url, "mp4");
-          if (cobaltUrl) {
-            await sock.sendMessage(m.chat, {
-              video: { url: cobaltUrl },
-              caption: `🎵 *TikTok Downloaded!*\n\n> ${config.footer}`
+          if (videoUrl) {
+            return await sock.sendMessage(m.chat, {
+              video: { url: videoUrl },
+              caption: `🎵 *${title}*\n👤 *Creator:* ${author}\n\n> ${config.footer}`
             }, { quoted: m });
-          } else {
-            await sock.sendMessage(m.chat, { text: "❌ *Could not download TikTok video. Check if the link is public.*" }, { quoted: m });
           }
         }
+        await sock.sendMessage(m.chat, { text: "❌ *Could not download TikTok video. Check if the link is public.*" }, { quoted: m });
       } catch (err) {
         console.error("TikTok error:", err.message);
         await sock.sendMessage(m.chat, { text: `❌ *Download failed:* ${err.message}` }, { quoted: m });
@@ -328,20 +308,17 @@ Reply with👇
         }, { quoted: m });
       }
 
-      await sock.sendMessage(m.chat, { text: "⏳ *Downloading Instagram media...*" }, { quoted: m });
+      await sock.sendMessage(m.chat, { text: "⏳ *Fetching Instagram media...*" }, { quoted: m });
 
       try {
-        const mediaUrl = await downloadMedia(url, "mp4");
-        if (mediaUrl) {
-          await sock.sendMessage(m.chat, {
-            video: { url: mediaUrl },
-            caption: `📸 *Instagram Video Downloaded!*\n\n> ${config.footer}`
-          }, { quoted: m });
-        } else {
-          await sock.sendMessage(m.chat, {
-            text: "❌ *Could not download Instagram post. Make sure the account/post is public.*"
-          }, { quoted: m });
-        }
+        // Fast online resolver
+        const snapinstaLink = `https://snapinsta.app/?url=${encodeURIComponent(url)}`;
+        await sock.sendMessage(m.chat, {
+          text: `📸 *INSTAGRAM DOWNLOADER*\n\n` +
+            `🔗 *Direct Post:* ${url}\n\n` +
+            `✨ Instagram post direct link:\n${snapinstaLink}\n\n` +
+            `> ${config.footer}`
+        }, { quoted: m });
       } catch (err) {
         console.error("IG error:", err.message);
         await sock.sendMessage(m.chat, { text: `❌ *Download failed:* ${err.message}` }, { quoted: m });
@@ -371,40 +348,42 @@ Reply with👇
     await sock.sendMessage(
       m.chat,
       {
-        text: `⬇️ *Downloading ${format.toUpperCase()}...*\n🎵 *${pending.title}*\n⏳ Please wait...`,
+        text: `⬇️ *Downloading ${format.toUpperCase()}...*\n🎵 *${pending.title}*\n⏳ Please wait, streaming directly...`,
       },
       { quoted: m }
     );
 
     try {
-      const downloadUrl = await downloadMedia(pending.videoUrl, format);
-
-      if (!downloadUrl) {
-        return await sock.sendMessage(
-          m.chat,
-          {
-            text: `❌ *Download failed!*\n\n🔗 Manual download: ${pending.videoUrl}\n\n💡 Try: *${config.prefix}song ${pending.title}* again`,
-          },
-          { quoted: m }
-        ) || true;
-      }
-
       if (format === "mp3") {
+        // High quality audio stream
+        const audioStream = yt.download(pending.videoUrl, {
+          filter: { hasAudio: true, hasVideo: false }
+        });
+
+        const audioBuffer = await streamToBuffer(audioStream, 40 * 1024 * 1024);
+
         await sock.sendMessage(
           m.chat,
           {
-            audio: { url: downloadUrl },
-            mimetype: "audio/mpeg",
+            audio: audioBuffer,
+            mimetype: "audio/mp4",
             fileName: `${pending.title}.mp3`,
             caption: `🎵 *${pending.title}*\n👤 ${pending.author}\n\n> ${config.footer}`,
           },
           { quoted: m }
         );
       } else {
+        // Video stream
+        const videoStream = yt.download(pending.videoUrl, {
+          quality: "lowest"
+        });
+
+        const videoBuffer = await streamToBuffer(videoStream, 45 * 1024 * 1024);
+
         await sock.sendMessage(
           m.chat,
           {
-            video: { url: downloadUrl },
+            video: videoBuffer,
             caption: `🎬 *${pending.title}*\n👤 ${pending.author}\n\n> ${config.footer}`,
             fileName: `${pending.title}.mp4`,
           },
@@ -412,10 +391,10 @@ Reply with👇
         );
       }
     } catch (err) {
-      console.error("Download error:", err);
+      console.error("Download processing error:", err.message);
       await sock.sendMessage(
         m.chat,
-        { text: `❌ *Download failed. Please try again!*\n🔗 *Manual:* ${pending.videoUrl}` },
+        { text: `❌ *Download failed:*\n\`${err.message}\`\n\n🔗 *YouTube link:* ${pending.videoUrl}` },
         { quoted: m }
       );
     }
