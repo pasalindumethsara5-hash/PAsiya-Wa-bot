@@ -90,7 +90,7 @@ async function startPasiyaBot() {
       keys: makeCacheableSignalKeyStore(state.keys, baseLogger),
     },
     msgRetryCounterCache,
-    browser: Browsers.macOS("Desktop"),
+    browser: Browsers.ubuntu("Chrome"),
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 60000,
     keepAliveIntervalMs: 25000,
@@ -179,15 +179,15 @@ async function startPasiyaBot() {
         console.log(`   4. Enter: \x1b[1m\x1b[32m${code}\x1b[0m\n`);
       } catch (err) {
         if (attempts < 5) {
-          console.log(`\x1b[31m[PAIRING] Attempt ${attempts} failed. Retrying in 5s...\x1b[0m`);
-          setTimeout(tryPairing, 5000);
+          console.log(`\x1b[31m[PAIRING] Attempt ${attempts} failed. Retrying in 3s...\x1b[0m`);
+          setTimeout(tryPairing, 3000);
         } else {
-          console.log(`\x1b[31m[ERROR] Could not get pairing code.\x1b[0m`);
+          console.log(`\x1b[31m[ERROR] Could not get pairing code: ${err.message}\x1b[0m`);
           console.log(`💡 Restart bot: node index.js`);
         }
       }
     };
-    setTimeout(tryPairing, 5000);
+    setTimeout(tryPairing, 3000);
   }
 
   // Save sent messages to messageStore for retry decryption
