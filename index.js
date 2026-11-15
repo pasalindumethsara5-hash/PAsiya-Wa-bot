@@ -94,7 +94,7 @@ async function startPasiyaBot() {
     getMessage: async (key) => {
       if (key && key.id) {
         const stored = messageStore.get(key.id);
-        if (stored) return stored;
+        if (stored) return stored.message || stored;
       }
       return undefined;
     },
@@ -222,17 +222,34 @@ async function startPasiyaBot() {
     }
   });
 
+  // 🛡️ Anti-Call: Auto-reject incoming calls to protect bot SIM
+  sock.ev.on("call", async (calls) => {
+    if (!config.antiCall) return;
+    for (const call of calls) {
+      if (call.status === "offer") {
+        try {
+          await sock.rejectCall(call.id, call.from);
+          const callerNumber = call.from.split("@")[0];
+          console.log(`\x1b[33m[ANTI-CALL] Rejected call from ${callerNumber}\x1b[0m`);
+          await sock.sendMessage(call.from, {
+            text: `╭───「 ⚠️ *CALL REJECTED* 」───\n│ 🤖 *Bot:* ${config.botName}\n│ 🚫 *Notice:* Automated bot number. Voice/Video calls are blocked.\n│ 💬 *Please send a text message instead.*\n╰───────────────────────────\n\n> ${config.footer}`
+          }).catch(() => {});
+        } catch (e) {}
+      }
+    }
+  });
+
   // Catch Bad MAC errors from message events
   sock.ev.on("messages.upsert", async (chatUpdate) => {
     try {
       if (chatUpdate.messages) {
         for (const msg of chatUpdate.messages) {
           if (msg.key && msg.key.id && msg.message) {
-            messageStore.set(msg.key.id, msg.message);
+            messageStore.set(msg.key.id, msg);
           }
         }
       }
-      await handleMessages(sock, chatUpdate);
+      await handleMessages(sock, chatUpdate, messageStore);
     } catch (err) {
       if (err.message && err.message.includes("Bad MAC")) {
         badMacCount++;

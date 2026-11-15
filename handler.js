@@ -138,7 +138,7 @@ async function safeSend(sock, jid, content, options = {}) {
 /**
  * Handle a single incoming or outgoing WhatsApp message
  */
-async function processSingleMessage(sock, m) {
+async function processSingleMessage(sock, m, messageStore) {
   if (!m || !m.message) return;
 
   const from = m.key.remoteJid;
@@ -199,6 +199,56 @@ async function processSingleMessage(sock, m) {
   if (msgContent.documentWithCaptionMessage) msgContent = msgContent.documentWithCaptionMessage.message;
 
   const messageType = Object.keys(msgContent)[0];
+
+  // ─── 🛡️ ANTI-DELETE DETECTOR ───────────────────────────────
+  if (
+    config.antiDelete &&
+    msgContent.protocolMessage &&
+    (msgContent.protocolMessage.type === 0 || msgContent.protocolMessage.type === "REVOKE")
+  ) {
+    const deletedKey = msgContent.protocolMessage.key;
+    if (deletedKey && deletedKey.id) {
+      const stored = messageStore?.get(deletedKey.id);
+      if (stored) {
+        const whoDeleted = m.key.participant || from;
+        const whoDeletedNum = whoDeleted.split("@")[0].replace(/[^0-9]/g, "");
+        const pushName = stored.pushName || whoDeletedNum;
+        const originalBody = getMessageBody(stored);
+        const ownerJid = sock.user?.id?.split(":")[0] + "@s.whatsapp.net";
+
+        const alertHeader = `╭───「 ⚠️ *ANTI-DELETE RECOVERY* 」───\n` +
+          `│ 👤 *Deleted by:* @${whoDeletedNum} (${pushName})\n` +
+          `│ 💬 *Chat:* ${from.endsWith("@g.us") ? "Group (" + from.split("@")[0] + ")" : "Private Chat"}\n` +
+          `│ 🕒 *Time:* ${new Date().toLocaleTimeString()}\n` +
+          `╰───────────────────────────\n\n` +
+          `📝 *Original Message:*\n${originalBody || "[Media message - Recovering...]"}`;
+
+        try {
+          await safeSend(sock, ownerJid, { text: alertHeader, mentions: [whoDeleted] });
+
+          // If deleted message was media, recover and send it to owner
+          const innerMsg = stored.message;
+          if (innerMsg?.imageMessage || innerMsg?.videoMessage || innerMsg?.audioMessage || innerMsg?.stickerMessage) {
+            const { downloadMediaMessage } = require("@whiskeysockets/baileys");
+            const buffer = await downloadMediaMessage(stored, "buffer", {});
+            if (innerMsg.imageMessage) {
+              await safeSend(sock, ownerJid, { image: buffer, caption: `🖼️ Deleted Image from @${whoDeletedNum}`, mentions: [whoDeleted] });
+            } else if (innerMsg.videoMessage) {
+              await safeSend(sock, ownerJid, { video: buffer, caption: `🎥 Deleted Video from @${whoDeletedNum}`, mentions: [whoDeleted] });
+            } else if (innerMsg.audioMessage) {
+              await safeSend(sock, ownerJid, { audio: buffer, mimetype: "audio/mp4" });
+            } else if (innerMsg.stickerMessage) {
+              await safeSend(sock, ownerJid, { sticker: buffer });
+            }
+          }
+        } catch (delErr) {
+          debugLog(`[ANTI-DELETE ERROR] ${delErr.message}`);
+        }
+      }
+    }
+    return;
+  }
+
   if (
     messageType === "protocolMessage" ||
     messageType === "senderKeyDistributionMessage" ||
@@ -409,13 +459,13 @@ async function processSingleMessage(sock, m) {
 /**
  * Main Baileys message event handler
  */
-async function handleMessages(sock, chatUpdate) {
+async function handleMessages(sock, chatUpdate, messageStore) {
   try {
     const messages = chatUpdate.messages;
     if (!messages || !Array.isArray(messages)) return;
 
     for (const m of messages) {
-      await processSingleMessage(sock, m);
+      await processSingleMessage(sock, m, messageStore);
     }
   } catch (err) {
     if (!err.message?.includes("Bad MAC")) {

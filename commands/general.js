@@ -32,20 +32,35 @@ module.exports = {
 
 ╭───「 *🤖 AI & TRANSLATION* 」
 │ 🔹 ${config.prefix}ai <query> - Chat with smart AI
+│ 🔹 ${config.prefix}voiceai <prompt> - Talking AI voice note
+│ 🔹 ${config.prefix}vision - Reply to photo to inspect
 │ 🔹 ${config.prefix}imagine <prompt> - Generate AI image
 │ 🔹 ${config.prefix}translate <text> - Translate to Sinhala
 │ 🔹 ${config.prefix}tr <lang> <text> - Translate to any language
 ╰───────────────────────────
 
+╭───「 *🎙️ AUDIO EFFECTS & VOICE CHANGER* 」
+│ 🔹 ${config.prefix}bass - Heavy bass boost audio
+│ 🔹 ${config.prefix}nightcore - Fast nightcore remix
+│ 🔹 ${config.prefix}slow - Slowed + reverb lofi vibe
+│ 🔹 ${config.prefix}robot - Robotic synth voice
+│ 🔹 ${config.prefix}deep - Deep pitch voice effect
+│ 🔹 ${config.prefix}reverse - Play audio in reverse
+│ 🔹 ${config.prefix}fast - 1.4x speed up audio
+│ 🔹 ${config.prefix}tomp3 - Convert VN/video to MP3
+╰───────────────────────────
+
 ╭───「 *🎨 MEDIA & STICKERS* 」
 │ 🔹 ${config.prefix}sticker (or ${config.prefix}s) - Quoted image to sticker
+│ 🔹 ${config.prefix}take <pack> | <author> - Steal & rename sticker
 │ 🔹 ${config.prefix}toimg - Quoted sticker to image
 │ 🔹 ${config.prefix}attp <text> - Text to animated sticker
 │ 🔹 ${config.prefix}emojimix <😀> <🔥> - Mix two emojis
 │ 🔹 ${config.prefix}tts <text> - Text to speech voice note
 ╰───────────────────────────
 
-╭───「 *📥 DOWNLOADERS* 」
+╭───「 *📥 DOWNLOADERS & STATUS* 」
+│ 🔹 ${config.prefix}save - Reply to status to download
 │ 🔹 ${config.prefix}song <name> - Search & download audio (MP3/MP4)
 │ 🔹 ${config.prefix}video <name> - Search & download YouTube video
 │ 🔹 ${config.prefix}yts <query> - Search YouTube videos

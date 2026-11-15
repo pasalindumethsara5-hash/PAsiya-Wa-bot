@@ -322,4 +322,55 @@ module.exports = {
       }
     },
   },
+
+  save: {
+    name: "save",
+    alias: ["status", "sw", "statussave"],
+    category: "tools",
+    desc: "Save or download any quoted WhatsApp status story (photo or video)",
+    async execute(sock, m) {
+      if (!m.quoted) {
+        return sock.sendMessage(m.chat, {
+          text: `💡 *Reply to a WhatsApp status (Photo or Video) with ${config.prefix}save to download it!*`
+        }, { quoted: m });
+      }
+
+      const qMsg = m.quoted.message;
+      if (!qMsg) {
+        return sock.sendMessage(m.chat, { text: "❌ *Could not find quoted status media.*" }, { quoted: m });
+      }
+
+      const isImage = qMsg.imageMessage;
+      const isVideo = qMsg.videoMessage;
+      const isAudio = qMsg.audioMessage;
+
+      if (!isImage && !isVideo && !isAudio) {
+        const text = m.quoted.text || "";
+        if (text) {
+          return sock.sendMessage(m.chat, {
+            text: `📝 *Status Text:*\n\n${text}\n\n> ${config.footer}`
+          }, { quoted: m });
+        }
+        return sock.sendMessage(m.chat, { text: "⚠️ *Please reply to a status image or video!*" }, { quoted: m });
+      }
+
+      await sock.sendMessage(m.chat, { text: "📥 *Saving status media...*" }, { quoted: m });
+
+      try {
+        const { downloadMediaMessage } = require("@whiskeysockets/baileys");
+        const buffer = await downloadMediaMessage(m.quoted, "buffer", {});
+        const caption = m.quoted.text ? `📌 *Caption:* ${m.quoted.text}\n\n> ${config.footer}` : `> ${config.footer}`;
+
+        if (isImage) {
+          await sock.sendMessage(m.chat, { image: buffer, caption }, { quoted: m });
+        } else if (isVideo) {
+          await sock.sendMessage(m.chat, { video: buffer, caption }, { quoted: m });
+        } else if (isAudio) {
+          await sock.sendMessage(m.chat, { audio: buffer, mimetype: "audio/mp4" }, { quoted: m });
+        }
+      } catch (err) {
+        await sock.sendMessage(m.chat, { text: `❌ *Failed to download status:* ${err.message}` }, { quoted: m });
+      }
+    }
+  },
 };

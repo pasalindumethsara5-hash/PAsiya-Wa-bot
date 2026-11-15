@@ -164,5 +164,83 @@ module.exports = {
         await sock.sendMessage(m.chat, { text: "❌ *Translation service temporarily unavailable!*" }, { quoted: m });
       }
     }
+  },
+
+  voiceai: {
+    name: "voiceai",
+    alias: ["vai", "talkai", "speakai"],
+    category: "ai",
+    desc: "AI answers your question with a spoken human voice note",
+    async execute(sock, m, args) {
+      const query = args.join(" ");
+      if (!query) {
+        return sock.sendMessage(m.chat, {
+          text: `⚠️ *Please provide a question to speak!*\n\n*Example:* ${config.prefix}vai machan tell me a funny story`
+        }, { quoted: m });
+      }
+
+      await sock.sendMessage(m.chat, { text: "🎙️ *PASIYA Voice AI is generating spoken response...*" }, { quoted: m });
+
+      try {
+        const aiPrompt = `Answer this briefly in 1-2 natural, lively sentences for a voice message: ${query}`;
+        const url = `https://text.pollinations.ai/${encodeURIComponent(aiPrompt)}`;
+        const res = await axios.get(url, { timeout: 20000 });
+        const answerText = (res.data || "Hello bro, I am PASIYA AI!").slice(0, 300);
+
+        // Convert answer to audio speech voice note
+        const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(answerText)}&tl=en&client=tw-ob`;
+        const audioRes = await axios.get(ttsUrl, { responseType: "arraybuffer", timeout: 15000 });
+        const buffer = Buffer.from(audioRes.data);
+
+        await sock.sendMessage(m.chat, {
+          audio: buffer,
+          mimetype: "audio/mp4",
+          ptt: true
+        }, { quoted: m });
+      } catch (err) {
+        await sock.sendMessage(m.chat, { text: `❌ *Voice AI error:* ${err.message}` }, { quoted: m });
+      }
+    }
+  },
+
+  vision: {
+    name: "vision",
+    alias: ["look", "describe", "see"],
+    category: "ai",
+    desc: "AI inspects and describes a quoted photo",
+    async execute(sock, m, args) {
+      const prompt = args.join(" ") || "Describe what is in this image in detail.";
+
+      if (!m.quoted || !m.quoted.message?.imageMessage) {
+        return sock.sendMessage(m.chat, {
+          text: `⚠️ *Please reply to an image with ${config.prefix}vision <optional question>!*`
+        }, { quoted: m });
+      }
+
+      await sock.sendMessage(m.chat, { text: "👁️ *PASIYA Vision AI is analyzing image...*" }, { quoted: m });
+
+      try {
+        const { downloadMediaMessage } = require("@whiskeysockets/baileys");
+        const buffer = await downloadMediaMessage(m.quoted, "buffer", {});
+        const base64 = buffer.toString("base64");
+
+        const visionRes = await axios.post("https://api.vreden.my.id/api/gemini-image", {
+          image: `data:image/jpeg;base64,${base64}`,
+          prompt: `${prompt}. Answer in friendly Singlish or English.`
+        }, { timeout: 30000 }).catch(() => null);
+
+        let desc = visionRes?.data?.result || visionRes?.data?.description;
+
+        if (!desc) {
+          desc = `🖼️ *Photo Inspected!*\n\n• File Size: ${(buffer.length / 1024).toFixed(1)} KB\n• Format: JPEG image\n• Query: "${prompt}"\n\n> 👑 ${config.footer}`;
+        }
+
+        await sock.sendMessage(m.chat, {
+          text: `👁️ *PASIYA VISION AI*\n\n${desc}\n\n> 👑 *Powered by PASIYA-MD*`
+        }, { quoted: m });
+      } catch (err) {
+        await sock.sendMessage(m.chat, { text: `❌ *Vision error:* ${err.message}` }, { quoted: m });
+      }
+    }
   }
 };

@@ -19,10 +19,16 @@ module.exports = {
   autoStatusRead: true,   // Automatically views WhatsApp statuses
   autoStatusReact: true,  // Automatically reacts to WhatsApp statuses
   statusReactEmoji: "random", // Mind-blowing unexpected emojis (🗿, 💀, 🤯, 🥷, 🫠, 👽, ⚡, 🦇, etc.)
+  antiCall: true,         // Automatically rejects incoming calls to protect bot SIM
+  antiDelete: true,       // Detects deleted messages and sends alert to owner
   alwaysOnline: true,     // Shows bot as always active
-  autoTyping: false,    // Simulates typing when processing
-  autoReact: true,      // Reacts with emojis to commands
-  workMode: "public",   // "public" (everyone can use) or "private" (only owner)
+  autoTyping: false,      // Simulates typing when processing
+  autoReact: true,        // Reacts with emojis to commands
+  workMode: "public",     // "public" (everyone can use) or "private" (only owner)
+
+  // Sticker Pack Settings
+  stickerPack: "PASIYA-MD",
+  stickerAuthor: "PASIYA",
 
   // Appearance & UI
   footer: "© 2026 PASIYA-MD | Created with ❤️ by PASIYA",

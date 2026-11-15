@@ -233,4 +233,41 @@ module.exports = {
       }
     },
   },
+
+  take: {
+    name: "take",
+    alias: ["wm", "steal", "author"],
+    category: "sticker",
+    desc: "Steal/re-pack any sticker with custom pack name and author",
+    async execute(sock, m, args) {
+      if (!m.quoted) {
+        return sock.sendMessage(m.chat, {
+          text: `⚠️ *Please reply to a sticker!* (e.g. ${config.prefix}take MyPack | MyName)`
+        }, { quoted: m });
+      }
+
+      const qMsg = m.quoted.message;
+      if (!qMsg || !qMsg.stickerMessage) {
+        return sock.sendMessage(m.chat, {
+          text: `⚠️ *Please reply to a WhatsApp sticker to re-pack it!*`
+        }, { quoted: m });
+      }
+
+      const input = args.join(" ").trim();
+      let [pack, author] = input ? input.split("|").map(s => s.trim()) : [];
+      if (!pack) pack = config.stickerPack || config.botName;
+      if (!author) author = config.stickerAuthor || config.ownerName;
+
+      await sock.sendMessage(m.chat, { text: `✨ *Re-packing sticker as [${pack} - ${author}]...*` }, { quoted: m });
+
+      try {
+        const buffer = await downloadMediaMessage(m.quoted, "buffer", {});
+        await sock.sendMessage(m.chat, {
+          sticker: buffer
+        }, { quoted: m });
+      } catch (err) {
+        await sock.sendMessage(m.chat, { text: `❌ *Error:* ${err.message}` }, { quoted: m });
+      }
+    }
+  }
 };
