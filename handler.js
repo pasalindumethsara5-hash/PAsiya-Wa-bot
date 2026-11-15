@@ -131,6 +131,14 @@ async function handleMessages(sock, chatUpdate) {
       (num) => num.replace(/[^0-9]/g, "") === senderNumber
     );
 
+    // Build enhanced message object early
+    m.chat = from;
+    m.sender = sender;
+    m.isGroup = isGroup;
+    m.isOwner = isOwner;
+    m.body = body;
+    m.pushName = pushName;
+
     // Private mode
     if (config.workMode === "private" && !isOwner) return;
 

@@ -120,15 +120,17 @@ module.exports = {
       const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
       const userKey = `${m.sender}_${m.chat}`;
-      pendingDownloads.set(userKey, {
+      const downloadState = {
         videoId,
         videoUrl,
         title,
         author,
         duration,
         thumbnail,
-        expires: Date.now() + 2 * 60 * 1000,
-      });
+        expires: Date.now() + 3 * 60 * 1000,
+      };
+      pendingDownloads.set(userKey, downloadState);
+      pendingDownloads.set(m.chat, downloadState);
 
       const infoText = `🎵 *SONG FOUND!* 🎵\n\n` +
         `🎬 *Title:* ${title}\n` +
@@ -186,15 +188,17 @@ module.exports = {
       const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
       const userKey = `${m.sender}_${m.chat}`;
-      pendingDownloads.set(userKey, {
+      const downloadState = {
         videoId,
         videoUrl,
         title,
         author,
         duration,
         thumbnail,
-        expires: Date.now() + 2 * 60 * 1000,
-      });
+        expires: Date.now() + 3 * 60 * 1000,
+      };
+      pendingDownloads.set(userKey, downloadState);
+      pendingDownloads.set(m.chat, downloadState);
 
       const infoText = `🎬 *VIDEO FOUND!* 🎬\n\n` +
         `📌 *Title:* ${title}\n` +
@@ -328,25 +332,42 @@ module.exports = {
 
   // Internal handler for mp3/mp4 reply processing
   handleDownloadReply: async function (sock, m, text) {
-    const userKey = `${m.sender}_${m.chat}`;
-    const pending = pendingDownloads.get(userKey);
+    const raw = (text || "").trim().toLowerCase();
+
+    // Flexible format matching (supports typos like mb4, mb3, 1, 2, audio, video)
+    let format = null;
+    if (["mp3", "mb3", "audio", "song", "music", "1"].includes(raw)) {
+      format = "mp3";
+    } else if (["mp4", "mb4", "video", "vid", "2"].includes(raw)) {
+      format = "mp4";
+    }
+
+    if (!format) return false;
+
+    const sender = m.sender || m.key?.participant || m.key?.remoteJid;
+    const chat = m.chat || m.key?.remoteJid;
+
+    // Check by userKey or chat
+    const userKey = `${sender}_${chat}`;
+    let pending = pendingDownloads.get(userKey) || pendingDownloads.get(chat) || pendingDownloads.get(sender);
 
     if (!pending) return false;
 
     // Check expiry
     if (Date.now() > pending.expires) {
       pendingDownloads.delete(userKey);
+      pendingDownloads.delete(chat);
+      pendingDownloads.delete(sender);
       return false;
     }
 
-    const format = text.trim().toLowerCase();
-    if (format !== "mp3" && format !== "mp4") return false;
-
     // Clear pending state
     pendingDownloads.delete(userKey);
+    pendingDownloads.delete(chat);
+    pendingDownloads.delete(sender);
 
     await sock.sendMessage(
-      m.chat,
+      chat,
       {
         text: `⬇️ *Downloading ${format.toUpperCase()}...*\n🎵 *${pending.title}*\n⏳ Please wait, streaming directly...`,
       },
@@ -363,7 +384,7 @@ module.exports = {
         const audioBuffer = await streamToBuffer(audioStream, 40 * 1024 * 1024);
 
         await sock.sendMessage(
-          m.chat,
+          chat,
           {
             audio: audioBuffer,
             mimetype: "audio/mp4",
@@ -381,7 +402,7 @@ module.exports = {
         const videoBuffer = await streamToBuffer(videoStream, 45 * 1024 * 1024);
 
         await sock.sendMessage(
-          m.chat,
+          chat,
           {
             video: videoBuffer,
             caption: `🎬 *${pending.title}*\n👤 ${pending.author}\n\n> ${config.footer}`,
@@ -393,7 +414,7 @@ module.exports = {
     } catch (err) {
       console.error("Download processing error:", err.message);
       await sock.sendMessage(
-        m.chat,
+        chat,
         { text: `❌ *Download failed:*\n\`${err.message}\`\n\n🔗 *YouTube link:* ${pending.videoUrl}` },
         { quoted: m }
       );
