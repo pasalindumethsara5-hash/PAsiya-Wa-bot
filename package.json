@@ -34,7 +34,7 @@
     "pino": "^8.19.0",
     "pino-pretty": "^10.3.1",
     "qrcode-terminal": "^0.12.0",
-    "ytsr": "^3.9.1"
+    "ytsr": "^3.8.4"
   },
   "allowScripts": {
     "@whiskeysockets/baileys@6.7.24": true,
