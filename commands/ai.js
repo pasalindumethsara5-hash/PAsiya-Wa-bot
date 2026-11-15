@@ -20,7 +20,6 @@ module.exports = {
       await sock.sendMessage(m.chat, { text: "💭 *PASIYA AI is thinking...*" }, { quoted: m });
 
       try {
-        // Free AI API endpoint
         const response = await axios.get(
           `https://text.pollinations.ai/${encodeURIComponent(query)}?system=You are PASIYA AI, a smart and friendly AI assistant created by PASIYA for WhatsApp. Be helpful, concise, and friendly.`
         );
@@ -78,4 +77,59 @@ module.exports = {
       }
     },
   },
+
+  translate: {
+    name: "translate",
+    alias: ["tr", "trans", "sinhala"],
+    category: "ai",
+    desc: "Translate text to Sinhala or any language",
+    async execute(sock, m, args) {
+      let text = args.join(" ");
+      let targetLang = "si"; // default Sinhala
+
+      if (m.quoted && m.quoted.text) {
+        text = m.quoted.text;
+        if (args[0] && args[0].length === 2) {
+          targetLang = args[0].toLowerCase();
+        }
+      } else if (args.length >= 2 && args[0].length === 2) {
+        targetLang = args[0].toLowerCase();
+        text = args.slice(1).join(" ");
+      }
+
+      if (!text) {
+        return sock.sendMessage(
+          m.chat,
+          { text: `⚠️ *Usage:* ${config.prefix}translate <text>\n*Or with target lang:* ${config.prefix}tr en කොහොමද\n*Example:* ${config.prefix}tr Good morning!` },
+          { quoted: m }
+        );
+      }
+
+      try {
+        // Free Google Translate API
+        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
+        const res = await axios.get(url, { timeout: 10000 });
+        
+        let translated = "";
+        if (res.data && res.data[0]) {
+          translated = res.data[0].map(item => item[0]).join("");
+        }
+
+        if (!translated) {
+          return sock.sendMessage(m.chat, { text: "❌ *Translation failed!*" }, { quoted: m });
+        }
+
+        const reply = `🌐 *PASIYA TRANSLATE*\n\n` +
+          `📝 *Original:* ${text}\n` +
+          `🎯 *Target Lang:* ${targetLang.toUpperCase()}\n\n` +
+          `✨ *Translation:*\n${translated}\n\n` +
+          `> ${config.footer}`;
+
+        await sock.sendMessage(m.chat, { text: reply }, { quoted: m });
+      } catch (err) {
+        console.error("Translation error:", err.message);
+        await sock.sendMessage(m.chat, { text: "❌ *Translation service temporarily unavailable!*" }, { quoted: m });
+      }
+    }
+  }
 };

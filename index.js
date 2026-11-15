@@ -13,6 +13,7 @@ const readline = require("readline");
 const config = require("./config");
 const { handleMessages } = require("./handler");
 const { importSession } = require("./session-manager");
+const { handleGroupParticipants } = require("./lib/group-events");
 
 // ☁️ Cloud deploy: restore session from env variable if available
 importSession();
@@ -189,6 +190,15 @@ async function startPasiyaBot() {
   });
 
   sock.ev.on("creds.update", saveCreds);
+
+  // Group join/leave events for Welcome & Goodbye
+  sock.ev.on("group-participants.update", async (event) => {
+    try {
+      await handleGroupParticipants(sock, event);
+    } catch (err) {
+      console.error("[GROUP EVENT ERROR]", err.message);
+    }
+  });
 
   // Catch Bad MAC errors from message events
   sock.ev.on("messages.upsert", async (chatUpdate) => {

@@ -3,6 +3,7 @@ const path = require("path");
 const config = require("./config");
 const downloadModule = require("./commands/download");
 const { checkAutoReply } = require("./lib/autoreply");
+const { handleAntiLink } = require("./lib/group-events");
 const {
   humanDelay,
   simulateTyping,
@@ -182,6 +183,12 @@ async function handleMessages(sock, chatUpdate) {
 
     // ─── NON-COMMAND MESSAGES ──────────────────────────────────
     if (!isCmd) {
+      // 🛡️ Group Anti-link check for non-command messages
+      if (isGroup && !isOwner) {
+        const linkCaught = await handleAntiLink(sock, { chat: from, sender, key: m.key, isGroup }, body).catch(() => false);
+        if (linkCaught) return;
+      }
+
       const handled = await downloadModule.handleDownloadReply(sock, m, body).catch(() => false);
       if (handled) {
         recordGlobalMessage();

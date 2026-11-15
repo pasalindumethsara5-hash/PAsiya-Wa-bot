@@ -265,6 +265,90 @@ Reply with👇
     },
   },
 
+  tiktok: {
+    name: "tiktok",
+    alias: ["tt", "tiktokdl"],
+    category: "download",
+    desc: "Download TikTok video without watermark",
+    async execute(sock, m, args) {
+      const url = args[0];
+      if (!url || !url.includes("tiktok.com")) {
+        return sock.sendMessage(m.chat, {
+          text: `⚠️ *Please provide a valid TikTok URL!*\n\n*Example:* ${config.prefix}tiktok https://vm.tiktok.com/...`
+        }, { quoted: m });
+      }
+
+      await sock.sendMessage(m.chat, { text: "⏳ *Downloading TikTok video (No Watermark)...*" }, { quoted: m });
+
+      try {
+        const res = await axios.post("https://www.tikwm.com/api/", `url=${encodeURIComponent(url)}`, {
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          timeout: 20000
+        });
+
+        if (res.data && res.data.data) {
+          const data = res.data.data;
+          const videoUrl = data.play || data.wmplay;
+          const title = data.title || "TikTok Video";
+          const author = data.author?.nickname || "TikTok User";
+
+          await sock.sendMessage(m.chat, {
+            video: { url: videoUrl },
+            caption: `🎵 *${title}*\n👤 *Creator:* ${author}\n\n> ${config.footer}`
+          }, { quoted: m });
+        } else {
+          // Fallback to cobalt
+          const cobaltUrl = await downloadMedia(url, "mp4");
+          if (cobaltUrl) {
+            await sock.sendMessage(m.chat, {
+              video: { url: cobaltUrl },
+              caption: `🎵 *TikTok Downloaded!*\n\n> ${config.footer}`
+            }, { quoted: m });
+          } else {
+            await sock.sendMessage(m.chat, { text: "❌ *Could not download TikTok video. Check if the link is public.*" }, { quoted: m });
+          }
+        }
+      } catch (err) {
+        console.error("TikTok error:", err.message);
+        await sock.sendMessage(m.chat, { text: `❌ *Download failed:* ${err.message}` }, { quoted: m });
+      }
+    }
+  },
+
+  instagram: {
+    name: "instagram",
+    alias: ["ig", "igdl", "reels"],
+    category: "download",
+    desc: "Download Instagram Reels or post video",
+    async execute(sock, m, args) {
+      const url = args[0];
+      if (!url || !url.includes("instagram.com")) {
+        return sock.sendMessage(m.chat, {
+          text: `⚠️ *Please provide a valid Instagram URL!*\n\n*Example:* ${config.prefix}ig https://www.instagram.com/reel/...`
+        }, { quoted: m });
+      }
+
+      await sock.sendMessage(m.chat, { text: "⏳ *Downloading Instagram media...*" }, { quoted: m });
+
+      try {
+        const mediaUrl = await downloadMedia(url, "mp4");
+        if (mediaUrl) {
+          await sock.sendMessage(m.chat, {
+            video: { url: mediaUrl },
+            caption: `📸 *Instagram Video Downloaded!*\n\n> ${config.footer}`
+          }, { quoted: m });
+        } else {
+          await sock.sendMessage(m.chat, {
+            text: "❌ *Could not download Instagram post. Make sure the account/post is public.*"
+          }, { quoted: m });
+        }
+      } catch (err) {
+        console.error("IG error:", err.message);
+        await sock.sendMessage(m.chat, { text: `❌ *Download failed:* ${err.message}` }, { quoted: m });
+      }
+    }
+  },
+
   // Internal handler for mp3/mp4 reply processing
   handleDownloadReply: async function (sock, m, text) {
     const userKey = `${m.sender}_${m.chat}`;

@@ -5,7 +5,7 @@ const os = require("os");
 module.exports = {
   menu: {
     name: "menu",
-    alias: ["help", "list"],
+    alias: ["help", "list", "commands"],
     category: "general",
     desc: "Display bot commands list",
     async execute(sock, m, args) {
@@ -23,53 +23,85 @@ module.exports = {
 ╰───────────────────────────
 
 ╭───「 *🔰 GENERAL* 」
-│ 🔹 ${config.prefix}alive - Check bot status
-│ 🔹 ${config.prefix}ping - Check bot response speed
-│ 🔹 ${config.prefix}menu - Display this help menu
-│ 🔹 ${config.prefix}owner - Show owner contact
-│ 🔹 ${config.prefix}botinfo - Bot specifications
+│ 🔹 ${config.prefix}alive - Check bot online status
+│ 🔹 ${config.prefix}ping - Response latency test
+│ 🔹 ${config.prefix}menu - Display this command list
+│ 🔹 ${config.prefix}owner - Show owner contact card
+│ 🔹 ${config.prefix}botinfo - Bot specifications & OS
 ╰───────────────────────────
 
-╭───「 *🤖 AI TOOLS* 」
-│ 🔹 ${config.prefix}ai <query> - Ask anything to AI
-│ 🔹 ${config.prefix}gemini <query> - Chat with Google AI
+╭───「 *🤖 AI & TRANSLATION* 」
+│ 🔹 ${config.prefix}ai <query> - Chat with smart AI
 │ 🔹 ${config.prefix}imagine <prompt> - Generate AI image
+│ 🔹 ${config.prefix}translate <text> - Translate to Sinhala
+│ 🔹 ${config.prefix}tr <lang> <text> - Translate to any language
 ╰───────────────────────────
 
-╭───「 *🎨 MEDIA & STICKER* 」
-│ 🔹 ${config.prefix}sticker (or ${config.prefix}s) - Image to sticker
-│ 🔹 ${config.prefix}tts <text> - Text to speech audio
-│ 🔹 ${config.prefix}quote <text> - Create quote image
+╭───「 *🎨 MEDIA & STICKERS* 」
+│ 🔹 ${config.prefix}sticker (or ${config.prefix}s) - Quoted image to sticker
+│ 🔹 ${config.prefix}toimg - Quoted sticker to image
+│ 🔹 ${config.prefix}attp <text> - Text to animated sticker
+│ 🔹 ${config.prefix}emojimix <😀> <🔥> - Mix two emojis
+│ 🔹 ${config.prefix}tts <text> - Text to speech voice note
 ╰───────────────────────────
 
 ╭───「 *📥 DOWNLOADERS* 」
-│ 🔹 ${config.prefix}song <name> - Search & download audio
-│ 🔹 ${config.prefix}video <name> - Search & download video
-│ 🔹 ${config.prefix}yts <query> - Search YouTube
+│ 🔹 ${config.prefix}song <name> - Search & download audio (MP3/MP4)
+│ 🔹 ${config.prefix}video <name> - Search & download YouTube video
+│ 🔹 ${config.prefix}yts <query> - Search YouTube videos
+│ 🔹 ${config.prefix}tiktok <url> - Download TikTok (No Watermark)
+│ 🔹 ${config.prefix}ig <url> - Download Instagram Reels / Post
 ╰───────────────────────────
 
-╭───「 *👥 GROUP COMMANDS* 」
-│ 🔹 ${config.prefix}tagall <text> - Tag all group members
-│ 🔹 ${config.prefix}hidetag <text> - Invisible tag for all
-│ 🔹 ${config.prefix}groupinfo - Get group information
-│ 🔹 ${config.prefix}kick @user - Remove member (Admin only)
+╭───「 *👥 GROUP MANAGEMENT* 」
+│ 🔹 ${config.prefix}tagall <text> - Mention all members
+│ 🔹 ${config.prefix}hidetag <text> - Ghost broadcast to all
+│ 🔹 ${config.prefix}antilink on/off - Block links in group
+│ 🔹 ${config.prefix}welcome on/off - Set welcome message
+│ 🔹 ${config.prefix}goodbye on/off - Set goodbye message
+│ 🔹 ${config.prefix}poll Q | Opt1 | Opt2 - Create group poll
+│ 🔹 ${config.prefix}mute - Close group (Admin only)
+│ 🔹 ${config.prefix}unmute - Open group (Admin only)
+│ 🔹 ${config.prefix}kick @user - Remove member
 │ 🔹 ${config.prefix}promote @user - Make admin
 │ 🔹 ${config.prefix}demote @user - Dismiss admin
-│ 🔹 ${config.prefix}savecontacts - Save all group contacts to phone (VCF)
+│ 🔹 ${config.prefix}groupinfo - View group details
+│ 🔹 ${config.prefix}savecontacts - Export members to VCF file
 │ 🔹 ${config.prefix}getmembers - View all member numbers
 ╰───────────────────────────
 
-╭───「 *🛠️ UTILITIES* 」
+╭───「 *🛠️ UTILITIES & TOOLS* 」
+│ 🔹 ${config.prefix}qr <text/url> - Generate QR Code image
+│ 🔹 ${config.prefix}shorturl <url> - Shorten long web link
+│ 🔹 ${config.prefix}define <word> - English dictionary definition
+│ 🔹 ${config.prefix}news - Latest top news headlines
+│ 🔹 ${config.prefix}remind 5m <task> - Set a reminder timer
+│ 🔹 ${config.prefix}lyrics <song> - Search song lyrics
+│ 🔹 ${config.prefix}color <hex> - Color hex details & preview
 │ 🔹 ${config.prefix}calc <math> - Calculate math expression
-│ 🔹 ${config.prefix}weather <city> - Weather information
-│ 🔹 ${config.prefix}fact - Random interesting fact
-│ 🔹 ${config.prefix}joke - Random funny joke
+│ 🔹 ${config.prefix}weather <city> - Real-time weather report
+│ 🔹 ${config.prefix}fact - Random mind-blowing fact
+│ 🔹 ${config.prefix}joke - Funny random joke
 ╰───────────────────────────
 
-╭───「 *👑 OWNER* 」
-│ 🔹 ${config.prefix}restart - Restart the bot
-│ 🔹 ${config.prefix}setprefix <symbol> - Change prefix
-│ 🔹 ${config.prefix}mode <public/private> - Switch mode
+╭───「 *🎮 FUN & GAMES* 」
+│ 🔹 ${config.prefix}8ball <question> - Magic 8-Ball oracle
+│ 🔹 ${config.prefix}roast [@user] - Savage roast delivery
+│ 🔹 ${config.prefix}ship @p1 @p2 - Love match percentage
+│ 🔹 ${config.prefix}quote - Inspiring quote of the day
+│ 🔹 ${config.prefix}meme - Random trending meme
+│ 🔹 ${config.prefix}truth - Truth or Dare: Truth question
+│ 🔹 ${config.prefix}dare - Truth or Dare: Dare challenge
+│ 🔹 ${config.prefix}rps <rock/paper/scissors> - Play vs bot
+│ 🔹 ${config.prefix}flip - Flip a coin (Heads/Tails)
+│ 🔹 ${config.prefix}dice - Roll a 6-sided dice
+╰───────────────────────────
+
+╭───「 *👑 OWNER CONTROLS* 」
+│ 🔹 ${config.prefix}antiban - Live anti-ban protection stats
+│ 🔹 ${config.prefix}restart - Reboot the bot process
+│ 🔹 ${config.prefix}setprefix <sym> - Change command prefix
+│ 🔹 ${config.prefix}mode <public/private> - Switch bot mode
 ╰───────────────────────────
 
 > ${config.footer}`;
@@ -97,11 +129,11 @@ module.exports = {
     desc: "Check response latency",
     async execute(sock, m) {
       const start = Date.now();
-      const testMsg = await sock.sendMessage(m.chat, { text: "⚡ *Testing ping...*" }, { quoted: m });
+      await sock.sendMessage(m.chat, { text: "⚡ *Testing ping...*" }, { quoted: m });
       const lat = Date.now() - start;
       await sock.sendMessage(
         m.chat,
-        { text: `🚀 *Pong!* \n⚡ *Latency:* ${lat}ms\n👑 *Bot:* ${config.botName}` },
+        { text: `🚀 *Pong!*\n⚡ *Latency:* ${lat}ms\n👑 *Bot:* ${config.botName}` },
         { quoted: m }
       );
     },
