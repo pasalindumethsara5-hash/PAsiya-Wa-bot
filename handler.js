@@ -152,12 +152,33 @@ async function processSingleMessage(sock, m) {
         try {
           await sock.readMessages([m.key]);
 
-          // Auto Status React (if enabled in config)
+          // Auto Status React (with unpredictable mind-blowing emojis)
           if (config.autoStatusReact && m.key.participant) {
-            const emojis = ["💚", "❤️", "🔥", "✨", "💯", "😍", "⚡", "🙌"];
+            const wildEmojis = [
+              "🗿", // Sigma Moai
+              "💀", // Dead / Skull
+              "🤯", // Mind Blown
+              "🫠", // Melting Face
+              "🫡", // Respect Salute
+              "🥷", // Stealth Ninja
+              "👽", // Alien
+              "🥶", // Ice Cold
+              "🦇", // Batman Dark Knight
+              "⚡", // Lightning Bolt
+              "👑", // King Crown
+              "😈", // Savage Devil
+              "👻", // Ghost
+              "🪐", // Planet Saturn
+              "🚀", // Rocket
+              "🔮", // Magic Crystal
+              "🔥", // Pure Fire
+              "✨", // Sparkles
+              "💯", // 100 Legit
+              "🖤", // Dark Heart
+            ];
             const emoji = config.statusReactEmoji === "random"
-              ? emojis[Math.floor(Math.random() * emojis.length)]
-              : (config.statusReactEmoji || "💚");
+              ? wildEmojis[Math.floor(Math.random() * wildEmojis.length)]
+              : (config.statusReactEmoji || "🗿");
 
             await sock.sendMessage(
               "status@broadcast",

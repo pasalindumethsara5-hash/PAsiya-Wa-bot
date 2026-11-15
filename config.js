@@ -18,7 +18,7 @@ module.exports = {
   // Features Settings
   autoStatusRead: true,   // Automatically views WhatsApp statuses
   autoStatusReact: true,  // Automatically reacts to WhatsApp statuses
-  statusReactEmoji: "💚", // Emoji to react ("💚", "❤️", "🔥", "✨", or "random")
+  statusReactEmoji: "random", // Mind-blowing unexpected emojis (🗿, 💀, 🤯, 🥷, 🫠, 👽, ⚡, 🦇, etc.)
   alwaysOnline: true,     // Shows bot as always active
   autoTyping: false,    // Simulates typing when processing
   autoReact: true,      // Reacts with emojis to commands
