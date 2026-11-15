@@ -224,15 +224,6 @@ async function startPasiyaBot() {
       badMacCount = 0; // Reset on successful connection
       console.log(`\n\x1b[42m\x1b[30m 🚀 PASIYA-MD IS NOW CONNECTED TO WHATSAPP! 🚀 \x1b[0m\n`);
       console.log(`👑 Bot active! Type ${config.prefix}menu in WhatsApp.\n`);
-
-      // Send welcome message to owner
-      try {
-        const userJid = sock.user.id.split(":")[0] + "@s.whatsapp.net";
-        await sock.sendMessage(userJid, {
-          text: `╭───「 *👑 PASIYA-MD CONNECTED* 」───\n│ 🤖 *Bot:* ${config.botName}\n│ 👑 *Owner:* ${config.ownerName}\n│ ⚡ *Status:* Online & Active\n│ 📌 *Prefix:* ${config.prefix}\n│ 🛡️ *Auto-Fix:* Enabled ✅\n╰───────────────────────────\n\n✨ Type *${config.prefix}menu* to begin!\n\n> ${config.footer}`
-        });
-      } catch (e) {}
-
     } else if (connection === "connecting") {
       console.log(`\x1b[34m[INFO] Connecting to WhatsApp...\x1b[0m`);
     }
