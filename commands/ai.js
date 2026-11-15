@@ -1,18 +1,36 @@
 const axios = require("axios");
 const config = require("../config");
 
+// Singlish & Sinhala Specialized System Prompt
+const AI_SYSTEM_PROMPT = `You are PASIYA AI, an ultra-smart, friendly AI assistant created by PASIYA for WhatsApp.
+You have native-level fluency in:
+1. Singlish (Sinhala language written using Latin/English letters, e.g. "machan", "kohomada", "mata meka kiyala denna", "mokakda karanna puluwan", "kiyapan", "hadaganne kohomada", "danna kenek kiyapan").
+2. Pure Sinhala (සිංහල).
+3. English.
+
+CRITICAL RULES FOR LANGUAGE & UNDERSTANDING:
+- ALWAYS accurately understand queries written in Singlish (phonetic Sinhala). Never mistake Singlish for gibberish, Spanish, or any other foreign language.
+- If the user asks in Singlish: reply in friendly, natural Singlish (or easy-to-read Sinhala/English mix as Sri Lankans naturally chat on WhatsApp).
+- If the user asks in Sinhala: reply in polite, fluent Sinhala.
+- If the user asks in English: reply in fluent English.
+- Always be helpful, respectful, and friendly like a true Sri Lankan friend ("machan", "bro").
+- Format nicely for WhatsApp using emojis, bullet points, and bold text (*...*).
+- Keep answers informative, concise, and easy to read on mobile screens.`;
+
 module.exports = {
   ai: {
     name: "ai",
-    alias: ["gpt", "ask", "gemini"],
+    alias: ["gpt", "ask", "gemini", "chat"],
     category: "ai",
-    desc: "Ask anything to AI",
+    desc: "Ask anything in Singlish, Sinhala, or English",
     async execute(sock, m, args) {
       const query = args.join(" ");
       if (!query) {
         return sock.sendMessage(
           m.chat,
-          { text: `⚠️ *Please provide a question or topic!*\n\n*Example:* ${config.prefix}ai What is quantum computing?` },
+          {
+            text: `⚠️ *Please provide a question!*\n\n💡 *Examples:*\n• ${config.prefix}ai machan battery life eka wadi karaganne kohomada?\n• ${config.prefix}ai ශ්‍රී ලංකාවේ අගනුවර කුමක්ද?\n• ${config.prefix}ai What is artificial intelligence?`
+          },
           { quoted: m }
         );
       }
@@ -20,23 +38,39 @@ module.exports = {
       await sock.sendMessage(m.chat, { text: "💭 *PASIYA AI is thinking...*" }, { quoted: m });
 
       try {
-        const response = await axios.get(
-          `https://text.pollinations.ai/${encodeURIComponent(query)}?system=You are PASIYA AI, a smart and friendly AI assistant created by PASIYA for WhatsApp. Be helpful, concise, and friendly.`
-        );
+        const url = `https://text.pollinations.ai/${encodeURIComponent(query)}?system=${encodeURIComponent(AI_SYSTEM_PROMPT)}`;
+        const response = await axios.get(url, { timeout: 25000 });
 
-        const reply = response.data || "Sorry, I could not generate an answer right now.";
+        const reply = response.data || "Machan, uththare hoyaganna bari una. Poddak aye ahanna!";
         await sock.sendMessage(
           m.chat,
           {
-            text: `🤖 *PASIYA AI Response:*\n\n${reply}\n\n> 👑 *Powered by PASIYA-MD*`,
+            text: `🤖 *PASIYA AI*\n\n${reply}\n\n> 👑 *Powered by PASIYA-MD*`,
           },
           { quoted: m }
         );
       } catch (err) {
-        console.error("AI Error:", err);
+        // Fallback endpoint
+        try {
+          const fallbackRes = await axios.get(
+            `https://api.vreden.my.id/api/chatgpt?query=${encodeURIComponent(query)}`,
+            { timeout: 15000 }
+          );
+          if (fallbackRes.data && fallbackRes.data.result) {
+            return await sock.sendMessage(
+              m.chat,
+              {
+                text: `🤖 *PASIYA AI*\n\n${fallbackRes.data.result}\n\n> 👑 *Powered by PASIYA-MD*`,
+              },
+              { quoted: m }
+            );
+          }
+        } catch (e2) {}
+
+        console.error("AI Error:", err.message);
         await sock.sendMessage(
           m.chat,
-          { text: "❌ *Failed to connect to AI server. Please try again in a few seconds!*" },
+          { text: "❌ *Server eka busy machan. Thawa vinadiyakata passe aye try karanna!*" },
           { quoted: m }
         );
       }
@@ -106,7 +140,6 @@ module.exports = {
       }
 
       try {
-        // Free Google Translate API
         const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
         const res = await axios.get(url, { timeout: 10000 });
         
