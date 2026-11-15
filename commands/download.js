@@ -263,10 +263,13 @@ module.exports = {
     category: "download",
     desc: "Download TikTok video without watermark",
     async execute(sock, m, args) {
-      const url = args[0];
-      if (!url || !url.includes("tiktok.com")) {
+      const rawText = args.join(" ");
+      const urlMatch = rawText.match(/https?:\/\/[^\s<>"]+/i);
+      const url = urlMatch ? urlMatch[0] : (args[0] || "").replace(/^[<(\[]+/, "").replace(/[>)\]]+$/, "").trim();
+
+      if (!url || (!url.includes("tiktok.com") && !url.includes("douyin.com"))) {
         return sock.sendMessage(m.chat, {
-          text: `⚠️ *Please provide a valid TikTok URL!*\n\n*Example:* ${config.prefix}tiktok https://vm.tiktok.com/...`
+          text: `⚠️ *Please provide a valid TikTok URL!*\n\n*Example:* ${config.prefix}tiktok https://vt.tiktok.com/...`
         }, { quoted: m });
       }
 
@@ -275,7 +278,9 @@ module.exports = {
       try {
         const result = await Downloader(url, { version: "v1" });
         if (result.status === "success" && result.result) {
-          const videoUrl = result.result.video?.playAddr?.[0] || result.result.videoUrl;
+          const playUrls = result.result.video?.playAddr || [];
+          const downloadUrls = result.result.video?.downloadAddr || [];
+          const videoUrl = playUrls[0] || downloadUrls[0] || result.result.videoUrl;
           const title = result.result.description || result.result.title || "TikTok Video";
           const author = result.result.author?.nickname || "TikTok User";
 
@@ -300,7 +305,10 @@ module.exports = {
     category: "download",
     desc: "Download Instagram Reels or post video",
     async execute(sock, m, args) {
-      const url = args[0];
+      const rawText = args.join(" ");
+      const urlMatch = rawText.match(/https?:\/\/[^\s<>"]+/i);
+      const url = urlMatch ? urlMatch[0] : (args[0] || "").replace(/^[<(\[]+/, "").replace(/[>)\]]+$/, "").trim();
+
       if (!url || !url.includes("instagram.com")) {
         return sock.sendMessage(m.chat, {
           text: `⚠️ *Please provide a valid Instagram URL!*\n\n*Example:* ${config.prefix}ig https://www.instagram.com/reel/...`

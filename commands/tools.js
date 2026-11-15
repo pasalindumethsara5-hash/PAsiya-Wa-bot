@@ -129,7 +129,10 @@ module.exports = {
     category: "tools",
     desc: "Shorten a long URL using TinyURL",
     async execute(sock, m, args) {
-      const url = args[0];
+      const rawText = args.join(" ");
+      const urlMatch = rawText.match(/https?:\/\/[^\s<>"]+/i);
+      const url = urlMatch ? urlMatch[0] : (args[0] || "").replace(/^[<(\[]+/, "").replace(/[>)\]]+$/, "").trim();
+
       if (!url) return sock.sendMessage(m.chat, { text: `⚠️ *Provide a URL to shorten!* (e.g. ${config.prefix}shorturl https://google.com)` }, { quoted: m });
       try {
         const res = await axios.get(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(url)}`);
