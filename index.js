@@ -4,6 +4,7 @@ const {
   DisconnectReason,
   fetchLatestBaileysVersion,
   Browsers,
+  makeCacheableSignalKeyStore,
 } = require("@whiskeysockets/baileys");
 const pino = require("pino");
 const { Boom } = require("@hapi/boom");
@@ -78,28 +79,54 @@ async function startPasiyaBot() {
     console.log(`\x1b[34m[INFO] Number saved: ${phoneNumber}. Connecting...\x1b[0m\n`);
   }
 
+  const baseLogger = pino({ level: "silent" });
+
   const sock = makeWASocket({
     version,
-    logger: pino({ level: "silent" }),
+    logger: baseLogger,
     printQRInTerminal: false,
-    auth: state,
+    auth: {
+      creds: state.creds,
+      keys: makeCacheableSignalKeyStore(state.keys, baseLogger),
+    },
     msgRetryCounterCache,
-    browser: Browsers.ubuntu("Chrome"),
+    browser: Browsers.macOS("Desktop"),
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 60000,
     keepAliveIntervalMs: 25000,
     markOnlineOnConnect: true,
     syncFullHistory: false,
     generateHighQualityLinkPreview: false,
+    patchMessageBeforeSending: (message) => {
+      const requiresPatch = !!(
+        message.buttonsMessage ||
+        message.templateMessage ||
+        message.listMessage
+      );
+      if (requiresPatch) {
+        message = {
+          viewOnceMessage: {
+            message: {
+              messageContextInfo: {
+                deviceListMetadataVersion: 2,
+                deviceListMetadata: {},
+              },
+              ...message,
+            },
+          },
+        };
+      }
+      return message;
+    },
     getMessage: async (key) => {
       if (key && key.id) {
         const stored = messageStore.get(key.id);
         if (stored) return stored.message || stored;
       }
-      return undefined;
+      return { conversation: "" };
     },
     // Intercept logger to detect Bad MAC errors
-    logger: pino({ level: "silent" }).child({}, {
+    logger: baseLogger.child({}, {
       serializers: {
         err: (err) => {
           if (err && err.message && err.message.includes("Bad MAC")) {
