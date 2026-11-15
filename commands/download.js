@@ -394,9 +394,10 @@ module.exports = {
           { quoted: m }
         );
       } else {
-        // Video stream
+        // Video stream with audio (muxed 360p/480p)
         const videoStream = yt.download(pending.videoUrl, {
-          quality: "lowest"
+          filter: (f) => f.hasAudio && f.hasVideo,
+          quality: "lowestvideo"
         });
 
         const videoBuffer = await streamToBuffer(videoStream, 45 * 1024 * 1024);
