@@ -10,6 +10,7 @@ const { Boom } = require("@hapi/boom");
 const fs = require("fs");
 const path = require("path");
 const readline = require("readline");
+const NodeCache = require("node-cache");
 const config = require("./config");
 const { handleMessages } = require("./handler");
 const { importSession } = require("./session-manager");
@@ -17,6 +18,10 @@ const { handleGroupParticipants } = require("./lib/group-events");
 
 // ☁️ Cloud deploy: restore session from env variable if available
 importSession();
+
+// Retry cache and message store to eliminate "Waiting for this message"
+const msgRetryCounterCache = new NodeCache();
+const messageStore = new NodeCache({ stdTTL: 3600, checkperiod: 120 });
 
 const SESSION_PATH = path.join(__dirname, "session");
 
@@ -78,14 +83,21 @@ async function startPasiyaBot() {
     logger: pino({ level: "silent" }),
     printQRInTerminal: false,
     auth: state,
+    msgRetryCounterCache,
     browser: Browsers.ubuntu("Chrome"),
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 60000,
-    keepAliveIntervalMs: 25000,       // 🛡️ Less frequent keepalive
-    markOnlineOnConnect: false,       // 🛡️ Don't force online
-    syncFullHistory: false,           // 🛡️ Don't sync history
-    generateHighQualityLinkPreview: false, // 🛡️ Less API calls
-    getMessage: async () => ({ conversation: "" }), // 🛡️ Prevent retry floods
+    keepAliveIntervalMs: 25000,
+    markOnlineOnConnect: true,
+    syncFullHistory: false,
+    generateHighQualityLinkPreview: false,
+    getMessage: async (key) => {
+      if (key && key.id) {
+        const stored = messageStore.get(key.id);
+        if (stored) return stored;
+      }
+      return undefined;
+    },
     // Intercept logger to detect Bad MAC errors
     logger: pino({ level: "silent" }).child({}, {
       serializers: {
@@ -151,6 +163,16 @@ async function startPasiyaBot() {
     setTimeout(tryPairing, 5000);
   }
 
+  // Save sent messages to messageStore for retry decryption
+  const rawSendMessage = sock.sendMessage.bind(sock);
+  sock.sendMessage = async (...args) => {
+    const sent = await rawSendMessage(...args);
+    if (sent && sent.key && sent.key.id && sent.message) {
+      messageStore.set(sent.key.id, sent.message);
+    }
+    return sent;
+  };
+
   // Connection events
   sock.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect } = update;
@@ -203,6 +225,13 @@ async function startPasiyaBot() {
   // Catch Bad MAC errors from message events
   sock.ev.on("messages.upsert", async (chatUpdate) => {
     try {
+      if (chatUpdate.messages) {
+        for (const msg of chatUpdate.messages) {
+          if (msg.key && msg.key.id && msg.message) {
+            messageStore.set(msg.key.id, msg.message);
+          }
+        }
+      }
       await handleMessages(sock, chatUpdate);
     } catch (err) {
       if (err.message && err.message.includes("Bad MAC")) {
