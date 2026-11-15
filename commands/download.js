@@ -275,6 +275,28 @@ module.exports = {
 
       await sock.sendMessage(m.chat, { text: "⏳ *Downloading TikTok video (No Watermark)...*" }, { quoted: m });
 
+      // Fallback 1: TikWM API (Fast, handles short links & no-watermark HD)
+      try {
+        const resp = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`, {
+          headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+          timeout: 15000,
+        });
+        if (resp.data && resp.data.code === 0 && resp.data.data) {
+          const d = resp.data.data;
+          const playUrl = d.play || d.hdplay || d.wmplay;
+          if (playUrl) {
+            const fullPlayUrl = playUrl.startsWith("http") ? playUrl : `https://www.tikwm.com${playUrl}`;
+            return await sock.sendMessage(m.chat, {
+              video: { url: fullPlayUrl },
+              caption: `🎵 *${d.title || "TikTok Video"}*\n👤 *Creator:* ${d.author?.nickname || "TikTok User"}\n\n> ${config.footer}`
+            }, { quoted: m });
+          }
+        }
+      } catch (e1) {
+        console.log("[TIKTOK] TikWM fallback failed, trying API-DL v1...", e1.message);
+      }
+
+      // Fallback 2: @tobyg74/tiktok-api-dl v1
       try {
         const result = await Downloader(url, { version: "v1" });
         if (result.status === "success" && result.result) {
@@ -291,11 +313,41 @@ module.exports = {
             }, { quoted: m });
           }
         }
-        await sock.sendMessage(m.chat, { text: "❌ *Could not download TikTok video. Check if the link is public.*" }, { quoted: m });
-      } catch (err) {
-        console.error("TikTok error:", err.message);
-        await sock.sendMessage(m.chat, { text: `❌ *Download failed:* ${err.message}` }, { quoted: m });
+      } catch (e2) {
+        console.log("[TIKTOK] API-DL v1 fallback failed, trying v2...", e2.message);
       }
+
+      // Fallback 3: @tobyg74/tiktok-api-dl v2
+      try {
+        const result2 = await Downloader(url, { version: "v2" });
+        if (result2.status === "success" && result2.result) {
+          const videoUrl = result2.result.videoUrl || result2.result.video;
+          if (videoUrl) {
+            return await sock.sendMessage(m.chat, {
+              video: { url: videoUrl },
+              caption: `🎵 *${result2.result.title || "TikTok Video"}*\n👤 *Creator:* ${result2.result.author?.nickname || "TikTok User"}\n\n> ${config.footer}`
+            }, { quoted: m });
+          }
+        }
+      } catch (e3) {
+        console.log("[TIKTOK] API-DL v2 fallback failed, trying Tiklydown...", e3.message);
+      }
+
+      // Fallback 4: Tiklydown API
+      try {
+        const tldResp = await axios.get(`https://api.tiklydown.eu.org/api/download?url=${encodeURIComponent(url)}`, { timeout: 15000 });
+        if (tldResp.data && (tldResp.data.video?.noWatermark || tldResp.data.video?.watermark)) {
+          const vUrl = tldResp.data.video.noWatermark || tldResp.data.video.watermark;
+          return await sock.sendMessage(m.chat, {
+            video: { url: vUrl },
+            caption: `🎵 *${tldResp.data.title || "TikTok Video"}*\n👤 *Creator:* ${tldResp.data.author?.name || "TikTok User"}\n\n> ${config.footer}`
+          }, { quoted: m });
+        }
+      } catch (e4) {
+        console.log("[TIKTOK] Tiklydown fallback failed:", e4.message);
+      }
+
+      await sock.sendMessage(m.chat, { text: "❌ *Could not download TikTok video. Check if the link is public.*" }, { quoted: m });
     }
   },
 

@@ -162,11 +162,21 @@ async function processSingleMessage(sock, m, messageStore) {
   }
 
   // 🛡️ ANTI-REPLAY FILTER: Skip old/historical messages synced from WhatsApp servers
-  const msgTime = typeof m.messageTimestamp === "number"
-    ? m.messageTimestamp
-    : m.messageTimestamp?.low || Math.floor(Date.now() / 1000);
+  let msgTime = 0;
+  if (typeof m.messageTimestamp === "number") {
+    msgTime = m.messageTimestamp;
+  } else if (m.messageTimestamp && typeof m.messageTimestamp.toNumber === "function") {
+    msgTime = m.messageTimestamp.toNumber();
+  } else if (m.messageTimestamp && m.messageTimestamp.low) {
+    msgTime = m.messageTimestamp.low;
+  }
+  if (msgTime > 1e11) {
+    msgTime = Math.floor(msgTime / 1000);
+  }
 
-  if (msgTime < botStartTime - 5) {
+  // Only drop if timestamp is strictly in the past before bot booted (with 30s buffer for clock drift)
+  if (msgTime > 0 && msgTime < botStartTime - 30) {
+    debugLog(`[REPLAY IGNORED] Message from ${msgTime} is older than bot start ${botStartTime}`);
     return;
   }
 
