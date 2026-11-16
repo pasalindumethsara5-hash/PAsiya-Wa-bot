@@ -15,6 +15,12 @@ module.exports = {
   // "qr" = Terminal QR Code (Scan with phone camera)
   authMethod: "code",
 
+  // AI Engine Settings
+  // Optional: Add your 100% free Gemini API key from https://aistudio.google.com/app/apikey
+  // If left empty (""), the bot uses the built-in free Cloudflare AI engine automatically!
+  geminiApiKey: "",
+  groqApiKey: "",
+
   // Features Settings
   autoReply: false,       // Auto-reply to normal messages (DISABLED)
   autoStatusRead: true,   // Automatically views WhatsApp statuses

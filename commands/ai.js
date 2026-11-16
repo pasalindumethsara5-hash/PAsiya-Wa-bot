@@ -17,6 +17,111 @@ CRITICAL RULES FOR LANGUAGE & UNDERSTANDING:
 - Format nicely for WhatsApp using emojis, bullet points, and bold text (*...*).
 - Keep answers informative, concise, and easy to read on mobile screens.`;
 
+/**
+ * Master multi-tier AI query engine
+ * Tier 1: Google Gemini Flash (if config.geminiApiKey or process.env.GEMINI_API_KEY)
+ * Tier 2: Groq Cloud Llama 3.3 (if config.groqApiKey or process.env.GROQ_API_KEY)
+ * Tier 3: Cloudflare Workers AI Edge (Free, No Key, 100,000 req/day)
+ * Tier 4: Pollinations OpenAI model (Clean prompt fallback)
+ * Tier 5: DuckDuckGo Instant Knowledge Base
+ */
+async function generateAIReply(query, options = {}) {
+  const isVoice = Boolean(options.isVoice);
+  const sysPrompt = isVoice
+    ? "You are PASIYA AI. Answer concisely in 1-2 lively, friendly sentences suitable for a WhatsApp voice message. If user asks in Singlish, reply in Singlish. If in Sinhala, reply in Sinhala."
+    : AI_SYSTEM_PROMPT;
+
+  // 1. Google Gemini (Official Free API - Ultra Fast & Native Sinhala/Singlish)
+  const geminiKey = config.geminiApiKey || process.env.GEMINI_API_KEY;
+  if (geminiKey) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
+      const res = await axios.post(
+        url,
+        {
+          contents: [{ parts: [{ text: `${sysPrompt}\n\nUser Question: ${query}` }] }],
+        },
+        { timeout: 15000 }
+      );
+      const answer = res.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (answer && answer.trim()) return answer.trim();
+    } catch (e) {
+      console.log("[AI] Gemini API failed, trying next provider...", e.message);
+    }
+  }
+
+  // 2. Groq Cloud (Free Llama 3.3 70B - 14,400 req/day)
+  const groqKey = config.groqApiKey || process.env.GROQ_API_KEY;
+  if (groqKey) {
+    try {
+      const res = await axios.post(
+        "https://api.groq.com/openai/v1/chat/completions",
+        {
+          model: "llama-3.3-70b-versatile",
+          messages: [
+            { role: "system", content: sysPrompt },
+            { role: "user", content: query },
+          ],
+          max_tokens: isVoice ? 100 : 600,
+        },
+        {
+          headers: { Authorization: `Bearer ${groqKey}` },
+          timeout: 12000,
+        }
+      );
+      const answer = res.data?.choices?.[0]?.message?.content;
+      if (answer && answer.trim()) return answer.trim();
+    } catch (e) {
+      console.log("[AI] Groq API failed, trying next provider...", e.message);
+    }
+  }
+
+  // 3. Cloudflare Workers AI Edge (Free, No Key, 100,000 req/day)
+  try {
+    const prompt = `${sysPrompt}\n\nUser: ${query}`;
+    const res = await axios.post(
+      "https://devtoolbox-api.devtoolbox-api.workers.dev/ai/generate",
+      {
+        prompt,
+        max_tokens: isVoice ? 120 : 500,
+      },
+      { timeout: 15000 }
+    );
+    if (res.data && res.data.response) {
+      let text = res.data.response.trim();
+      if (text.startsWith(prompt)) text = text.slice(prompt.length).trim();
+      if (text) return text;
+    }
+  } catch (e) {
+    console.log("[AI] Cloudflare Workers AI failed, trying next provider...", e.message);
+  }
+
+  // 4. Pollinations OpenAI (Clean prompt fallback)
+  try {
+    const pUrl = `https://text.pollinations.ai/${encodeURIComponent(query + " (Reply in friendly Singlish or Sinhala)")}`;
+    const res = await axios.get(pUrl, { timeout: 8000 });
+    if (res.data && typeof res.data === "string" && !res.data.includes("budget") && !res.data.includes("rate limit")) {
+      return res.data.trim();
+    }
+  } catch (e) {
+    console.log("[AI] Pollinations fallback failed, trying next provider...", e.message);
+  }
+
+  // 5. DuckDuckGo Instant Knowledge Fallback
+  try {
+    const ddgRes = await axios.get(
+      `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json`,
+      { timeout: 6000 }
+    );
+    const ans = ddgRes.data?.AbstractText || ddgRes.data?.Answer;
+    if (ans && ans.trim()) {
+      return `📌 *Knowledge Base:*\n${ans.trim()}`;
+    }
+  } catch (e) {}
+
+  return null;
+}
+
 module.exports = {
   ai: {
     name: "ai",
@@ -38,35 +143,24 @@ module.exports = {
       await sock.sendMessage(m.chat, { text: "💭 *PASIYA AI is thinking...*" }, { quoted: m });
 
       try {
-        const url = `https://text.pollinations.ai/${encodeURIComponent(query)}?system=${encodeURIComponent(AI_SYSTEM_PROMPT)}`;
-        const response = await axios.get(url, { timeout: 25000 });
+        const reply = await generateAIReply(query);
 
-        const reply = response.data || "Machan, uththare hoyaganna bari una. Poddak aye ahanna!";
-        await sock.sendMessage(
-          m.chat,
-          {
-            text: `🤖 *PASIYA AI*\n\n${reply}\n\n> 👑 *Powered by PASIYA-MD*`,
-          },
-          { quoted: m }
-        );
-      } catch (err) {
-        // Fallback endpoint
-        try {
-          const fallbackRes = await axios.get(
-            `https://api.vreden.my.id/api/chatgpt?query=${encodeURIComponent(query)}`,
-            { timeout: 15000 }
+        if (reply) {
+          await sock.sendMessage(
+            m.chat,
+            {
+              text: `🤖 *PASIYA AI*\n\n${reply}\n\n> 👑 *Powered by PASIYA-MD*`,
+            },
+            { quoted: m }
           );
-          if (fallbackRes.data && fallbackRes.data.result) {
-            return await sock.sendMessage(
-              m.chat,
-              {
-                text: `🤖 *PASIYA AI*\n\n${fallbackRes.data.result}\n\n> 👑 *Powered by PASIYA-MD*`,
-              },
-              { quoted: m }
-            );
-          }
-        } catch (e2) {}
-
+        } else {
+          await sock.sendMessage(
+            m.chat,
+            { text: "❌ *Server eka busy machan. Thawa vinadiyakata passe aye try karanna!*" },
+            { quoted: m }
+          );
+        }
+      } catch (err) {
         console.error("AI Error:", err.message);
         await sock.sendMessage(
           m.chat,
@@ -182,10 +276,8 @@ module.exports = {
       await sock.sendMessage(m.chat, { text: "🎙️ *PASIYA Voice AI is generating spoken response...*" }, { quoted: m });
 
       try {
-        const aiPrompt = `Answer this briefly in 1-2 natural, lively sentences for a voice message: ${query}`;
-        const url = `https://text.pollinations.ai/${encodeURIComponent(aiPrompt)}`;
-        const res = await axios.get(url, { timeout: 20000 });
-        const answerText = (res.data || "Hello bro, I am PASIYA AI!").slice(0, 300);
+        const rawAnswer = await generateAIReply(query, { isVoice: true });
+        const answerText = (rawAnswer || "Hello bro, I am PASIYA AI!").slice(0, 300);
 
         // Convert answer to audio speech voice note
         const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(answerText)}&tl=en&client=tw-ob`;
